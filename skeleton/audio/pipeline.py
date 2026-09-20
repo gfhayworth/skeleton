@@ -5,6 +5,7 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 from skeleton.audio.config import AudioConfig
 from skeleton.audio.mouth_sync import MouthSyncFrame, MouthSyncProcessor
+from skeleton.audio.recorder import AudioRecorder, BaseAudioRecorder
 from skeleton.audio.stt import BaseSTTClient, WhisperSTTClient
 from skeleton.audio.tts import BaseTTSClient, OpenAITTSClient
 from skeleton.dialogue.models import VisionContext
@@ -34,12 +35,40 @@ class SkeletonAudioPipeline:
         tts_client: Optional[BaseTTSClient] = None,
         orchestrator: Optional[DialogueOrchestrator] = None,
         mouth_sync: Optional[MouthSyncProcessor] = None,
+        recorder: Optional[BaseAudioRecorder] = None,
     ):
         self.config = config or AudioConfig()
         self.stt_client = stt_client or WhisperSTTClient(self.config)
         self.tts_client = tts_client or OpenAITTSClient(self.config)
         self.orchestrator = orchestrator or DialogueOrchestrator()
         self.mouth_sync = mouth_sync or MouthSyncProcessor(self.config)
+        self.recorder = recorder or AudioRecorder(sample_rate=self.config.sample_rate)
+
+    async def record_and_process(
+        self,
+        duration_seconds: float = 3.5,
+        device_index: Optional[int] = None,
+        vision_context: Optional[VisionContext] = None,
+    ) -> AudioDialogueResponse:
+        """Records microphone speech asynchronously and runs the full conversational audio loop.
+
+        Args:
+            duration_seconds: Duration of voice capture in seconds (0.5 - 30.0).
+            device_index: Optional physical input device index. None selects the system default.
+            vision_context: Optional computer vision environmental awareness.
+
+        Returns:
+            AudioDialogueResponse with user transcript, skeleton response, synthesized audio, and mouth frames.
+        """
+        raw_wav = await self.recorder.record_async(
+            duration_seconds=duration_seconds,
+            device_index=device_index,
+        )
+        return await self.process_audio_turn(
+            audio_bytes=raw_wav,
+            filename="user_recording.wav",
+            vision_context=vision_context,
+        )
 
     async def process_audio_turn(
         self,

@@ -33,21 +33,23 @@ class DialogueConfig(BaseSettings):
         from dotenv import load_dotenv
         load_dotenv(".env")
 
-        # If no explicit api_key was provided
+        # If no explicit api_key was provided, check GEMINI_API_KEY and OPENAI_API_KEY
         if not self.api_key or self.api_key.get_secret_value() in ("", "mock-or-env-key"):
-            openai_key = os.environ.get("OPENAI_API_KEY")
             gemini_key = os.environ.get("GEMINI_API_KEY")
+            openai_key = os.environ.get("OPENAI_API_KEY")
 
-            if openai_key:
+            if gemini_key:
+                self.api_key = SecretStr(gemini_key)
+                if "groq.com" in self.base_url:
+                    self.base_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
+                    self.model = "gemini-3.6-flash"
+                    self.max_response_tokens = 500
+                    self.pre_emission_timeout_s = 5.0
+            elif openai_key:
                 self.api_key = SecretStr(openai_key)
                 if "groq.com" in self.base_url:
                     self.base_url = "https://api.openai.com/v1"
                     self.model = "gpt-4o-mini"
-            elif gemini_key:
-                self.api_key = SecretStr(gemini_key)
-                if "groq.com" in self.base_url:
-                    self.base_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
-                    self.model = "gemini-2.0-flash"
     temperature: float = Field(
         default=0.7,
         ge=0.0,

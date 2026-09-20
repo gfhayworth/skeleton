@@ -4,7 +4,9 @@ pydantic>=2.10.0
 pydantic-settings>=2.7.0
 pytest>=8.0.0
 pytest-asyncio>=0.24.0
+python-dotenv>=1.0.0
 
-# Optional: Jupyter notebook support
+# Jupyter notebook & interactive widgets
 ipykernel>=6.29.0
 notebook>=7.0.0
+ipywidgets>=8.1.0

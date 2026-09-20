@@ -31,10 +31,10 @@ async def test_notebook_execution():
         if not source.strip():
             continue
 
-        # If cell contains top-level await, wrap in async function
+        # If cell contains top-level await, wrap in async function and persist variables
         if "await " in source:
             indented = "\n".join("    " + line for line in source.splitlines())
-            wrapped_code = f"async def _cell_runner():\n{indented}\n"
+            wrapped_code = f"async def _cell_runner():\n{indented}\n    globals().update(locals())\n"
             exec(wrapped_code, nb_globals)
             await nb_globals["_cell_runner"]()
         else:

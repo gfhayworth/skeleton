@@ -39,6 +39,12 @@ class AudioConfig(BaseSettings):
         description="Minimum audio buffer size to avoid empty/corrupt uploads.",
     )
 
+    # Audio Recording Settings
+    sample_rate: int = Field(
+        default=16000,
+        description="Sampling rate for microphone recording in Hz (16 kHz optimal for Whisper).",
+    )
+
     # TTS Settings (Skeleton Voice Persona: Deep Male)
     tts_model: str = Field(
         default="tts-1",

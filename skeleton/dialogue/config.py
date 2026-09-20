@@ -26,6 +26,28 @@ class DialogueConfig(BaseSettings):
         default="llama-3.1-8b-instant",
         description="Model name to invoke for ultra-low latency.",
     )
+
+    def model_post_init(self, __context) -> None:
+        """Auto-configures endpoints if standard OPENAI_API_KEY or GEMINI_API_KEY are present."""
+        import os
+        from dotenv import load_dotenv
+        load_dotenv(".env")
+
+        # If no explicit api_key was provided
+        if not self.api_key or self.api_key.get_secret_value() in ("", "mock-or-env-key"):
+            openai_key = os.environ.get("OPENAI_API_KEY")
+            gemini_key = os.environ.get("GEMINI_API_KEY")
+
+            if openai_key:
+                self.api_key = SecretStr(openai_key)
+                if "groq.com" in self.base_url:
+                    self.base_url = "https://api.openai.com/v1"
+                    self.model = "gpt-4o-mini"
+            elif gemini_key:
+                self.api_key = SecretStr(gemini_key)
+                if "groq.com" in self.base_url:
+                    self.base_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
+                    self.model = "gemini-2.0-flash"
     temperature: float = Field(
         default=0.7,
         ge=0.0,

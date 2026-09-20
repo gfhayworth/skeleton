@@ -1,0 +1,10 @@
+# Skeleton Low-Latency Dialogue Engine Dependencies
+httpx>=0.28.1
+pydantic>=2.10.0
+pydantic-settings>=2.7.0
+pytest>=8.0.0
+pytest-asyncio>=0.24.0
+
+# Optional: Jupyter notebook support
+ipykernel>=6.29.0
+notebook>=7.0.0

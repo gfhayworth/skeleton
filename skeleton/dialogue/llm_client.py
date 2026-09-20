@@ -48,10 +48,10 @@ class LowLatencyLLMClient(BaseLLMClient):
                 keepalive_expiry=self.config.keepalive_expiry_s,
             ),
             timeout=httpx.Timeout(
-                connect=3.0,
-                read=self.config.pre_emission_timeout_s,
-                write=3.0,
-                pool=2.0,
+                connect=5.0,
+                read=max(5.0, self.config.pre_emission_timeout_s),
+                write=5.0,
+                pool=3.0,
             ),
         )
 
@@ -71,6 +71,10 @@ class LowLatencyLLMClient(BaseLLMClient):
             "max_tokens": self.config.max_response_tokens,
             "stream": True,
         }
+
+        # Disable thinking latency for Gemini models to ensure instant conversational streaming
+        if "gemini" in self.config.model.lower() or "googleapis.com" in self.config.base_url:
+            payload["reasoning_effort"] = "none"
 
         tokens_emitted = 0
 

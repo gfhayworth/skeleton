@@ -130,3 +130,44 @@ async def test_audio_out_empty_text_rejected():
         resp = await client.post("/audio_out", json=payload)
         assert resp.status_code == 400
         assert "cannot be empty" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_sounds_list_and_play_endpoints():
+    app = _build_test_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        # Register a fake sound in the app's pipeline sound bank
+        pipeline: SkeletonAudioPipeline = app.state.pipeline
+        pipeline.sound_bank.register_sound(
+            sound_id="server_test_sound",
+            category="laugh",
+            text="Haha!",
+            audio_bytes=_make_dummy_wav(),
+        )
+
+        # GET /sounds
+        resp = await client.get("/sounds")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) >= 1
+        sound_entry = next((s for s in data if s["sound_id"] == "server_test_sound"), None)
+        assert sound_entry is not None
+        assert sound_entry["category"] == "laugh"
+
+        # POST /play_sound/{sound_id} (json format)
+        resp_play = await client.post("/play_sound/server_test_sound?format=json")
+        assert resp_play.status_code == 200
+        play_data = resp_play.json()
+        assert play_data["text"] == "Haha!"
+        assert len(play_data["audio_base64"]) > 50
+        assert len(play_data["mouth_frames"]) > 0
+
+        # POST /play_sound/{sound_id} (binary format)
+        resp_bin = await client.post("/play_sound/server_test_sound?format=binary")
+        assert resp_bin.status_code == 200
+        assert resp_bin.headers["content-type"] == "audio/wav"
+        assert len(resp_bin.content) > 50
+
+        # 404 on nonexistent sound
+        resp_404 = await client.post("/play_sound/not_real")
+        assert resp_404.status_code == 404

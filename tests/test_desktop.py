@@ -158,3 +158,32 @@ def test_audio_worker_with_fixed_recording():
     assert turn_event[1]["user"] == "Is anyone there?"
 
     client.close()
+
+
+def test_desktop_sound_trigger_playback():
+    """Verify pre-recorded sound trigger handler in desktop app plays audio and emits TURN event."""
+    # Instantiate test client
+    test_client = _make_test_client()
+    pipeline = test_client.app.state.pipeline
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(16000)
+        wf.writeframes(b"\x00\x00" * 400)
+    dummy_wav = buf.getvalue()
+    pipeline.sound_bank.register_sound(
+        sound_id="test_desktop_cackle",
+        category="laugh",
+        text="Hehehe!",
+        audio_bytes=dummy_wav,
+    )
+
+    # Test direct request
+    resp = test_client.post("/play_sound/test_desktop_cackle")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["text"] == "Hehehe!"
+    assert len(data["mouth_frames"]) > 0
+    assert len(data["audio_base64"]) > 0
+    test_client.close()

@@ -10,6 +10,12 @@ from skeleton.audio.recorder import (
     BaseAudioRecorder,
     MockAudioRecorder,
 )
+from skeleton.audio.sounds import (
+    DEFAULT_SOUNDS_DIR,
+    PreRecordedSound,
+    SoundBank,
+    SoundCategory,
+)
 from skeleton.audio.stt import BaseSTTClient, MockSTTClient, WhisperSTTClient
 from skeleton.audio.tts import BaseTTSClient, MockTTSClient, OpenAITTSClient
 
@@ -30,4 +36,9 @@ __all__ = [
     "MouthSyncProcessor",
     "SkeletonAudioPipeline",
     "AudioDialogueResponse",
+    "DEFAULT_SOUNDS_DIR",
+    "PreRecordedSound",
+    "SoundBank",
+    "SoundCategory",
 ]
+

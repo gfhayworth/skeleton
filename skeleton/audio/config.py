@@ -105,6 +105,16 @@ class AudioConfig(BaseSettings):
         description="Sampling rate for jaw-tracking frames in Hz (frames per second).",
     )
 
+    # Pre-recorded Sound Bank & Filler Settings
+    sounds_dir: Optional[str] = Field(
+        default=None,
+        description="Path to pre-recorded sound directory. If None, uses default assets/sounds.",
+    )
+    filler_on_speech: bool = Field(
+        default=False,
+        description="Whether to immediately trigger a pre-recorded filler upon speech detection to mask inference latency.",
+    )
+
     def model_post_init(self, __context) -> None:
         """Loads OPENAI_API_KEY from .env if api_key is not explicitly supplied."""
         load_dotenv(".env")

@@ -21,6 +21,17 @@ class HealthResponse(BaseModel):
     tts_voice: str
     sample_rate: int
     mouth_fps: int
+    prerecorded_sounds_count: int = 0
+
+
+class PreRecordedSoundModel(BaseModel):
+    """Metadata summary of a pre-recorded sound clip."""
+
+    sound_id: str
+    category: str
+    text: str
+    duration_s: float
+    mouth_frames_count: int
 
 
 class MouthSyncFrameModel(BaseModel):
@@ -105,6 +116,51 @@ def create_app(custom_pipeline: Optional[SkeletonAudioPipeline] = None) -> FastA
             tts_voice=pipeline.config.tts_voice,
             sample_rate=pipeline.config.sample_rate,
             mouth_fps=pipeline.config.mouth_fps,
+            prerecorded_sounds_count=len(pipeline.sound_bank.sounds),
+        )
+
+    @app.get("/sounds", response_model=List[PreRecordedSoundModel])
+    async def list_sounds(category: Optional[str] = Query(None, description="Optional category filter")) -> List[PreRecordedSoundModel]:
+        """Lists available pre-recorded sounds, optionally filtered by category."""
+        pipeline: SkeletonAudioPipeline = app.state.pipeline
+        sounds = (
+            pipeline.sound_bank.get_by_category(category)
+            if category
+            else list(pipeline.sound_bank.sounds.values())
+        )
+        return [
+            PreRecordedSoundModel(
+                sound_id=s.sound_id,
+                category=s.category.value if hasattr(s.category, "value") else str(s.category),
+                text=s.text,
+                duration_s=s.duration_s,
+                mouth_frames_count=len(s.mouth_frames),
+            )
+            for s in sounds
+        ]
+
+    @app.post("/play_sound/{sound_id}")
+    async def play_prerecorded_sound(
+        sound_id: str,
+        format: Optional[Literal["json", "binary"]] = Query("json", description="Response format"),
+    ) -> Any:
+        """Retrieves and returns pre-recorded audio and cached mouth trajectory instantly."""
+        pipeline: SkeletonAudioPipeline = app.state.pipeline
+        sound = pipeline.sound_bank.get(sound_id)
+        if sound is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Pre-recorded sound '{sound_id}' not found.",
+            )
+
+        if format == "binary":
+            return Response(content=sound.audio_bytes, media_type="audio/wav")
+
+        return AudioOutResponse(
+            text=sound.text,
+            audio_base64=base64.b64encode(sound.audio_bytes).decode("ascii"),
+            mouth_frames=_frames_to_models(sound.mouth_frames),
+            latency_ms=0.0,
         )
 
     @app.post("/audio_in", response_model=AudioInResponse)

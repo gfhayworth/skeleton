@@ -1,11 +1,12 @@
 """Unified end-to-end audio pipeline coordinating STT, dialogue, TTS, and mouth sync."""
 
 import time
-from typing import List, Optional
+from typing import List, Optional, Union
 from pydantic import BaseModel, Field
 from skeleton.audio.config import AudioConfig
 from skeleton.audio.mouth_sync import MouthSyncFrame, MouthSyncProcessor
 from skeleton.audio.recorder import AudioRecorder, BaseAudioRecorder
+from skeleton.audio.sounds import PreRecordedSound, SoundBank, SoundCategory
 from skeleton.audio.stt import BaseSTTClient, WhisperSTTClient
 from skeleton.audio.tts import BaseTTSClient, OpenAITTSClient
 from skeleton.dialogue.models import VisionContext
@@ -43,6 +44,11 @@ class SkeletonAudioPipeline:
         self.orchestrator = orchestrator or DialogueOrchestrator()
         self.mouth_sync = mouth_sync or MouthSyncProcessor(self.config)
         self.recorder = recorder or AudioRecorder(sample_rate=self.config.sample_rate)
+        self.sound_bank = SoundBank(
+            sounds_dir=self.config.sounds_dir,
+            config=self.config,
+            mouth_sync=self.mouth_sync,
+        )
 
     async def record_and_process(
         self,
@@ -140,6 +146,37 @@ class SkeletonAudioPipeline:
             audio_bytes=wav_audio,
             mouth_frames=mouth_frames,
             total_latency_ms=round(elapsed_ms, 2),
+        )
+
+    def play_prerecorded_sound(
+        self,
+        sound_id: Optional[str] = None,
+        category: Optional[Union[SoundCategory, str]] = None,
+    ) -> Optional[AudioDialogueResponse]:
+        """Instantly retrieves a pre-recorded sound response with pre-computed mouth frames.
+
+        Eliminates LLM and TTS processing latency (yielding sub-millisecond dispatch time).
+        """
+        t0 = time.perf_counter()
+        sound: Optional[PreRecordedSound] = None
+
+        if sound_id:
+            sound = self.sound_bank.get(sound_id)
+        elif category:
+            sound = self.sound_bank.get_random(category)
+        else:
+            sound = self.sound_bank.get_random()
+
+        if sound is None:
+            return None
+
+        elapsed_ms = (time.perf_counter() - t0) * 1000.0
+        return AudioDialogueResponse(
+            user_transcript="[pre-recorded trigger]",
+            skeleton_response=sound.text,
+            audio_bytes=sound.audio_bytes,
+            mouth_frames=sound.mouth_frames,
+            total_latency_ms=round(elapsed_ms, 3),
         )
 
     async def close(self) -> None:

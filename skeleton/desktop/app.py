@@ -283,6 +283,82 @@ def launch_gui(base_url: str = "http://127.0.0.1:8000") -> None:
             )
             self.footer_lbl.pack(fill=tk.X, padx=16, pady=(0, 6))
 
+            # Soundboard Quick Trigger Buttons Frame
+            soundboard_frame = tk.Frame(self.root, bg="#1e1e2e")
+            soundboard_frame.pack(fill=tk.X, padx=16, pady=(0, 8))
+
+            tk.Label(
+                soundboard_frame,
+                text="Instant Sounds:",
+                font=("Segoe UI", 9, "bold"),
+                fg="#a6adc8",
+                bg="#1e1e2e",
+            ).pack(side=tk.LEFT, padx=(0, 6))
+
+            for s_id, label, color in [
+                ("laugh_evil_cackle", "💀 Cackle", "#cba6f7"),
+                ("filler_hmm_thinking", "🤔 Ponder", "#89dceb"),
+                ("greeting_look_who_it_is", "👋 Greet", "#a6e3a1"),
+                ("confused_mumble", "👂 What?", "#f9e2af"),
+            ]:
+                btn = tk.Button(
+                    soundboard_frame,
+                    text=label,
+                    font=("Segoe UI", 8, "bold"),
+                    bg=color,
+                    fg="#1e1e2e",
+                    relief=tk.FLAT,
+                    padx=6,
+                    pady=2,
+                    cursor="hand2",
+                    command=lambda sid=s_id: self._trigger_sound(sid),
+                )
+                btn.pack(side=tk.LEFT, padx=3)
+
+        def _trigger_sound(self, sound_id: str):
+            """Instantly triggers pre-recorded sound over HTTP from the server."""
+            target_url = self.url_entry.get().strip().rstrip("/")
+            threading.Thread(
+                target=self._play_sound_request,
+                args=(target_url, sound_id),
+                daemon=True,
+            ).start()
+
+        def _play_sound_request(self, target_url: str, sound_id: str):
+            try:
+                resp = httpx.post(f"{target_url}/play_sound/{sound_id}")
+                if resp.status_code == 200:
+                    data = resp.json()
+                    b64 = data.get("audio_base64", "")
+                    if b64:
+                        wav_bytes = base64.b64decode(b64)
+                        self.ui_queue.put(("STATUS", f"Playing pre-recorded sound: {sound_id}"))
+                        self.ui_queue.put(
+                            (
+                                "TURN",
+                                {
+                                    "user": f"[Instant Trigger: {sound_id}]",
+                                    "skeleton": data.get("text", ""),
+                                    "latency_ms": 0.0,
+                                    "mouth_frames": len(data.get("mouth_frames", [])),
+                                },
+                            )
+                        )
+                        with io.BytesIO(wav_bytes) as buf:
+                            with wave.open(buf, "rb") as wf:
+                                channels = wf.getnchannels()
+                                rate = wf.getframerate()
+                                frames = wf.readframes(wf.getnframes())
+                                audio_data = np.frombuffer(frames, dtype=np.int16)
+                                if channels > 1:
+                                    audio_data = audio_data.reshape(-1, channels)
+                                sd.play(audio_data, samplerate=rate)
+                                sd.wait()
+                else:
+                    self.ui_queue.put(("ERROR", f"Sound trigger failed ({resp.status_code}): {resp.text}"))
+            except Exception as e:
+                self.ui_queue.put(("ERROR", f"Sound playback error: {e}"))
+
         def _toggle_listening(self):
             if not self.is_listening:
                 # Turn ON

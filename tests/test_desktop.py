@@ -131,3 +131,30 @@ def test_audio_worker_handles_server_error():
     assert "500" in error_events[0][1]
 
     mock_client.close()
+
+
+def test_audio_worker_with_fixed_recording():
+    client = _make_test_client()
+    ui_queue = queue.Queue()
+    mock_recorder = MockAudioRecorder()
+
+    worker = AudioWorker(
+        base_url="http://test",
+        record_seconds=0.5,
+        use_vad=False,
+        recorder=mock_recorder,
+        ui_queue=ui_queue,
+        http_client=client,
+    )
+
+    with patch("sounddevice.play"), patch("sounddevice.wait", side_effect=worker.stop), patch("time.sleep"):
+        worker.run()
+
+    events = []
+    while not ui_queue.empty():
+        events.append(ui_queue.get_nowait())
+
+    turn_event = next(e for e in events if e[0] == "TURN")
+    assert turn_event[1]["user"] == "Is anyone there?"
+
+    client.close()

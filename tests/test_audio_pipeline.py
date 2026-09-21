@@ -3,6 +3,7 @@
 import pytest
 from skeleton.audio.mouth_sync import MouthSyncProcessor
 from skeleton.audio.pipeline import SkeletonAudioPipeline
+from skeleton.audio.recorder import MockAudioRecorder
 from skeleton.audio.stt import MockSTTClient
 from skeleton.audio.tts import MockTTSClient
 from skeleton.dialogue.llm_client import MockLLMClient
@@ -17,11 +18,14 @@ async def test_audio_pipeline_end_to_end():
     mock_tts = MockTTSClient()
     mouth_sync = MouthSyncProcessor()
 
+    mock_recorder = MockAudioRecorder()
+
     pipeline = SkeletonAudioPipeline(
         stt_client=mock_stt,
         tts_client=mock_tts,
         orchestrator=orchestrator,
         mouth_sync=mouth_sync,
+        recorder=mock_recorder,
     )
 
     # 1. Process simulated audio turn
@@ -33,5 +37,10 @@ async def test_audio_pipeline_end_to_end():
     assert len(resp.audio_bytes) > 500
     assert len(resp.mouth_frames) > 0
     assert resp.total_latency_ms > 0
+
+    # 2. Process record_and_process with VAD
+    resp_vad = await pipeline.record_and_process(use_vad=True)
+    assert resp_vad.user_transcript == "Hey skeleton, are you awake?"
+    assert len(resp_vad.audio_bytes) > 500
 
     await pipeline.close()

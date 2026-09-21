@@ -159,3 +159,95 @@ async def test_pipeline_record_and_process():
     assert response.total_latency_ms > 0
 
     await pipeline.close()
+
+
+def test_mock_audio_recorder_record_with_vad():
+    recorder = MockAudioRecorder(sample_rate=16000)
+    speech_started = False
+
+    def on_start():
+        nonlocal speech_started
+        speech_started = True
+
+    wav_bytes = recorder.record_with_vad(
+        silence_duration_s=0.45,
+        max_recording_s=5.0,
+        on_speech_start=on_start,
+    )
+
+    assert speech_started is True
+    assert len(wav_bytes) > 0
+    with wave.open(io.BytesIO(wav_bytes), "rb") as wf:
+        assert wf.getnchannels() == 1
+        assert wf.getsampwidth() == 2
+        assert wf.getframerate() == 16000
+
+
+@pytest.mark.asyncio
+async def test_mock_audio_recorder_record_with_vad_async():
+    recorder = MockAudioRecorder(sample_rate=16000)
+    wav_bytes = await recorder.record_with_vad_async(silence_duration_s=0.45)
+    assert len(wav_bytes) > 0
+
+
+def test_audio_recorder_record_with_vad_invalid_frame_duration():
+    recorder = AudioRecorder(sample_rate=16000)
+    with pytest.raises(ValueError, match="frame_duration_ms must be 10, 20, or 30"):
+        recorder.record_with_vad(frame_duration_ms=25)
+
+
+def test_audio_recorder_record_with_vad_streaming_mock():
+    recorder = AudioRecorder(sample_rate=16000)
+
+    # Frame is 30ms -> 480 samples -> 960 bytes
+    sample_rate = 16000
+    samples_per_frame = int(sample_rate * 30 / 1000)
+    t = np.linspace(0, 0.03, samples_per_frame, endpoint=False)
+
+    # Speech frame: 200 Hz tone
+    speech_frame = (np.sin(2 * np.pi * 200 * t) * 15000).astype(np.int16).tobytes()
+    # Silence frame: zeros
+    silence_frame = np.zeros(samples_per_frame, dtype=np.int16).tobytes()
+
+    # Sequence: 2 silence frames (pre-speech), 4 speech frames, 4 silence frames (trailing silence)
+    frames_sequence = [silence_frame, silence_frame] + [speech_frame] * 4 + [silence_frame] * 5
+
+    frame_idx = 0
+
+    class FakeStream:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            pass
+
+        def read(self, num_samples):
+            nonlocal frame_idx
+            if frame_idx < len(frames_sequence):
+                frame = frames_sequence[frame_idx]
+                frame_idx += 1
+                return frame, False
+            return silence_frame, False
+
+    speech_started_flag = False
+
+    def on_speech():
+        nonlocal speech_started_flag
+        speech_started_flag = True
+
+    with patch("sounddevice.RawInputStream", return_value=FakeStream()):
+        wav_bytes = recorder.record_with_vad(
+            silence_duration_s=0.1,  # 0.1s / 0.03s ≈ 3-4 frames triggers stop
+            max_recording_s=5.0,
+            frame_duration_ms=30,
+            aggressiveness=2,
+            on_speech_start=on_speech,
+        )
+
+    assert speech_started_flag is True
+    assert len(wav_bytes) > 0
+    with wave.open(io.BytesIO(wav_bytes), "rb") as wf:
+        assert wf.getnchannels() == 1
+        assert wf.getsampwidth() == 2
+        assert wf.getframerate() == 16000
+

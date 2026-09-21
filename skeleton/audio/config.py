@@ -39,10 +39,36 @@ class AudioConfig(BaseSettings):
         description="Minimum audio buffer size to avoid empty/corrupt uploads.",
     )
 
-    # Audio Recording Settings
+    # Audio Recording & VAD Settings
     sample_rate: int = Field(
         default=16000,
         description="Sampling rate for microphone recording in Hz (16 kHz optimal for Whisper).",
+    )
+    vad_enabled: bool = Field(
+        default=True,
+        description="Whether to use Voice Activity Detection (VAD) for dynamic speech endpointing.",
+    )
+    vad_aggressiveness: int = Field(
+        default=2,
+        ge=0,
+        le=3,
+        description="WebRTC VAD aggressiveness mode (0=least aggressive, 3=most aggressive).",
+    )
+    vad_frame_duration_ms: int = Field(
+        default=30,
+        description="VAD frame chunk duration in milliseconds (must be 10, 20, or 30).",
+    )
+    vad_silence_duration_s: float = Field(
+        default=0.45,
+        ge=0.1,
+        le=3.0,
+        description="Duration of trailing silence in seconds to trigger speech endpointing.",
+    )
+    vad_max_recording_s: float = Field(
+        default=10.0,
+        ge=1.0,
+        le=30.0,
+        description="Maximum recording cutoff duration in seconds when VAD is active.",
     )
 
     # TTS Settings (Skeleton Voice Persona: Deep Male)

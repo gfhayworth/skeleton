@@ -46,24 +46,38 @@ class SkeletonAudioPipeline:
 
     async def record_and_process(
         self,
-        duration_seconds: float = 3.5,
+        duration_seconds: Optional[float] = None,
         device_index: Optional[int] = None,
         vision_context: Optional[VisionContext] = None,
+        use_vad: Optional[bool] = None,
     ) -> AudioDialogueResponse:
         """Records microphone speech asynchronously and runs the full conversational audio loop.
 
         Args:
-            duration_seconds: Duration of voice capture in seconds (0.5 - 30.0).
+            duration_seconds: Duration of voice capture in seconds (0.5 - 30.0). If use_vad is True
+                and duration_seconds is not explicitly passed, VAD dynamic endpointing is used.
             device_index: Optional physical input device index. None selects the system default.
             vision_context: Optional computer vision environmental awareness.
+            use_vad: Whether to use VAD endpointing. Defaults to config.vad_enabled.
 
         Returns:
             AudioDialogueResponse with user transcript, skeleton response, synthesized audio, and mouth frames.
         """
-        raw_wav = await self.recorder.record_async(
-            duration_seconds=duration_seconds,
-            device_index=device_index,
-        )
+        is_vad = self.config.vad_enabled if use_vad is None else use_vad
+
+        if is_vad and duration_seconds is None:
+            raw_wav = await self.recorder.record_with_vad_async(
+                device_index=device_index,
+                silence_duration_s=self.config.vad_silence_duration_s,
+                max_recording_s=self.config.vad_max_recording_s,
+                aggressiveness=self.config.vad_aggressiveness,
+                frame_duration_ms=self.config.vad_frame_duration_ms,
+            )
+        else:
+            raw_wav = await self.recorder.record_async(
+                duration_seconds=duration_seconds or 3.5,
+                device_index=device_index,
+            )
         return await self.process_audio_turn(
             audio_bytes=raw_wav,
             filename="user_recording.wav",

@@ -30,6 +30,9 @@ class AudioWorker(threading.Thread):
         recorder: Optional[BaseAudioRecorder] = None,
         ui_queue: Optional[queue.Queue] = None,
         http_client: Optional[httpx.Client] = None,
+        use_vad: bool = True,
+        vad_silence_duration_s: float = 0.45,
+        vad_max_recording_s: float = 10.0,
     ):
         super().__init__(daemon=True)
         self.base_url = base_url.rstrip("/")
@@ -40,6 +43,9 @@ class AudioWorker(threading.Thread):
         self.client = http_client or httpx.Client(timeout=30.0)
         self._owns_client = http_client is None
         self.stop_event = threading.Event()
+        self.use_vad = use_vad
+        self.vad_silence_duration_s = vad_silence_duration_s
+        self.vad_max_recording_s = vad_max_recording_s
 
     def stop(self) -> None:
         """Signals the worker loop to stop after the current step."""
@@ -51,12 +57,19 @@ class AudioWorker(threading.Thread):
 
         while not self.stop_event.is_set():
             try:
-                # 1. Record user speech from microphone
+                # 1. Record user speech from microphone (VAD-streamed or fixed duration)
                 self.ui_queue.put(("STATUS", "🎙️ Listening... Speak now!"))
-                raw_wav = self.recorder.record(
-                    duration_seconds=self.record_seconds,
-                    device_index=self.device_index,
-                )
+                if self.use_vad:
+                    raw_wav = self.recorder.record_with_vad(
+                        device_index=self.device_index,
+                        silence_duration_s=self.vad_silence_duration_s,
+                        max_recording_s=self.vad_max_recording_s,
+                    )
+                else:
+                    raw_wav = self.recorder.record(
+                        duration_seconds=self.record_seconds,
+                        device_index=self.device_index,
+                    )
 
                 if self.stop_event.is_set():
                     break
@@ -290,6 +303,7 @@ def launch_gui(base_url: str = "http://127.0.0.1:8000") -> None:
                 self.worker = AudioWorker(
                     base_url=target_url,
                     record_seconds=3.5,
+                    use_vad=True,
                     ui_queue=self.ui_queue,
                 )
                 self.worker.start()

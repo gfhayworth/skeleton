@@ -36,12 +36,47 @@ class BaseAudioRecorder:
     ) -> bytes:
         raise NotImplementedError
 
+    def record_with_vad(
+        self,
+        device_index: Optional[int] = None,
+        silence_duration_s: float = 0.45,
+        max_recording_s: float = 10.0,
+        aggressiveness: int = 2,
+        frame_duration_ms: int = 30,
+        on_speech_start=None,
+    ) -> bytes:
+        """Records microphone audio using Voice Activity Detection (VAD) endpointing.
+
+        Waits for speech onset, accumulates audio during active speech,
+        and endpoints when trailing silence is detected.
+        """
+        raise NotImplementedError
+
     async def record_async(
         self,
         duration_seconds: float = 3.5,
         device_index: Optional[int] = None,
     ) -> bytes:
         return await asyncio.to_thread(self.record, duration_seconds, device_index)
+
+    async def record_with_vad_async(
+        self,
+        device_index: Optional[int] = None,
+        silence_duration_s: float = 0.45,
+        max_recording_s: float = 10.0,
+        aggressiveness: int = 2,
+        frame_duration_ms: int = 30,
+        on_speech_start=None,
+    ) -> bytes:
+        return await asyncio.to_thread(
+            self.record_with_vad,
+            device_index=device_index,
+            silence_duration_s=silence_duration_s,
+            max_recording_s=max_recording_s,
+            aggressiveness=aggressiveness,
+            frame_duration_ms=frame_duration_ms,
+            on_speech_start=on_speech_start,
+        )
 
 
 class AudioRecorder(BaseAudioRecorder):
@@ -123,6 +158,103 @@ class AudioRecorder(BaseAudioRecorder):
 
         return buffer.getvalue()
 
+    def record_with_vad(
+        self,
+        device_index: Optional[int] = None,
+        silence_duration_s: float = 0.45,
+        max_recording_s: float = 10.0,
+        aggressiveness: int = 2,
+        frame_duration_ms: int = 30,
+        on_speech_start=None,
+    ) -> bytes:
+        """Records microphone speech streaming frames and endpoints via WebRTC VAD.
+
+        Args:
+            device_index: Input device index.
+            silence_duration_s: Trailing silence duration to stop recording once speech has started.
+            max_recording_s: Maximum allowable recording duration.
+            aggressiveness: VAD sensitivity (0=least aggressive, 3=most aggressive).
+            frame_duration_ms: Frame chunk in ms (10, 20, or 30).
+            on_speech_start: Optional callback invoked when speech onset is detected.
+
+        Returns:
+            Standard 16-bit PCM WAV audio bytes.
+        """
+        try:
+            import sounddevice as sd
+            import webrtcvad
+        except ImportError as err:
+            raise AudioDeviceError(f"Required audio library sounddevice/webrtcvad not available: {err}") from err
+
+        if frame_duration_ms not in (10, 20, 30):
+            raise ValueError(f"frame_duration_ms must be 10, 20, or 30 (got {frame_duration_ms})")
+
+        vad = webrtcvad.Vad(aggressiveness)
+        samples_per_frame = int(self.sample_rate * frame_duration_ms / 1000)
+        bytes_per_frame = samples_per_frame * 2  # 16-bit = 2 bytes per sample
+
+        max_frames = int(max_recording_s * 1000 / frame_duration_ms)
+        silence_frame_limit = int(silence_duration_s * 1000 / frame_duration_ms)
+
+        # Pre-speech circular ring buffer (keep ~300ms before speech onset for natural transients)
+        ring_buffer_size = int(0.3 * 1000 / frame_duration_ms)
+        ring_buffer: List[bytes] = []
+
+        voiced_frames: List[bytes] = []
+        speech_started = False
+        consecutive_silence = 0
+
+        try:
+            with sd.RawInputStream(
+                samplerate=self.sample_rate,
+                blocksize=samples_per_frame,
+                dtype="int16",
+                channels=1,
+                device=device_index,
+            ) as stream:
+                for _ in range(max_frames):
+                    frame_bytes, overflowed = stream.read(samples_per_frame)
+                    if len(frame_bytes) < bytes_per_frame:
+                        continue
+
+                    # Evaluate speech presence via WebRTC VAD
+                    is_speech = vad.is_speech(bytes(frame_bytes), self.sample_rate)
+
+                    if not speech_started:
+                        ring_buffer.append(bytes(frame_bytes))
+                        if len(ring_buffer) > ring_buffer_size:
+                            ring_buffer.pop(0)
+
+                        if is_speech:
+                            speech_started = True
+                            if on_speech_start:
+                                on_speech_start()
+                            voiced_frames.extend(ring_buffer)
+                            voiced_frames.append(bytes(frame_bytes))
+                    else:
+                        voiced_frames.append(bytes(frame_bytes))
+                        if not is_speech:
+                            consecutive_silence += 1
+                            if consecutive_silence >= silence_frame_limit:
+                                break
+                        else:
+                            consecutive_silence = 0
+        except Exception as exc:
+            raise AudioDeviceError(f"Streaming VAD recording failed: {exc}") from exc
+
+        # If no speech was detected, fallback to whatever ring buffer we accumulated
+        all_frames = voiced_frames if voiced_frames else ring_buffer
+        raw_pcm = b"".join(all_frames)
+
+        buffer = io.BytesIO()
+        with wave.open(buffer, "wb") as wav_file:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(self.sample_rate)
+            wav_file.writeframes(raw_pcm)
+
+        return buffer.getvalue()
+
 
 class MockAudioRecorder(BaseAudioRecorder):
     """Deterministic offline mock recorder for headless CI and testing without physical microphones."""
@@ -168,3 +300,19 @@ class MockAudioRecorder(BaseAudioRecorder):
             wav_file.writeframes(frames)
 
         return buffer.getvalue()
+
+    def record_with_vad(
+        self,
+        device_index: Optional[int] = None,
+        silence_duration_s: float = 0.45,
+        max_recording_s: float = 10.0,
+        aggressiveness: int = 2,
+        frame_duration_ms: int = 30,
+        on_speech_start=None,
+    ) -> bytes:
+        if on_speech_start:
+            on_speech_start()
+        # Mock recorder simulates 1.0 second of speech followed by trailing silence
+        # which triggers the VAD endpoint after speech_duration + silence_duration
+        mock_speech_duration = min(1.0, max_recording_s)
+        return self.record(duration_seconds=mock_speech_duration, device_index=device_index)

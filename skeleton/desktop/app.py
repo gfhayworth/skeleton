@@ -9,7 +9,7 @@ import sys
 import threading
 import time
 import wave
-from typing import Callable, List, Optional, Tuple
+from typing import Optional
 import httpx
 import numpy as np
 import sounddevice as sd
@@ -20,8 +20,7 @@ from skeleton.audio.recorder import AudioRecorder, BaseAudioRecorder, MockAudioR
 class AudioWorker(threading.Thread):
     """Background worker thread that records microphone audio, sends it to /audio_in,
 
-    and vocalizes the skeleton's response through speakers with acoustic echo protection
-    and voice-activated / manual barge-in interruption.
+    and vocalizes the skeleton's response through speakers with acoustic echo protection.
     """
 
     def __init__(
@@ -38,10 +37,6 @@ class AudioWorker(threading.Thread):
         streaming_playback: bool = True,
         transport_mode: str = "websocket",
         auto_greet_first_turn: bool = True,
-        voice_barge_in: bool = True,
-        barge_in_threshold: float = 0.06,
-        barge_in_consecutive_frames: int = 3,
-        barge_in_grace_period_s: float = 0.15,
     ):
         super().__init__(daemon=True)
         self.base_url = base_url.rstrip("/")
@@ -52,28 +47,17 @@ class AudioWorker(threading.Thread):
         self.client = http_client or httpx.Client(timeout=30.0)
         self._owns_client = http_client is None
         self.stop_event = threading.Event()
-        self.interrupt_event = threading.Event()
         self.use_vad = use_vad
         self.vad_silence_duration_s = vad_silence_duration_s
         self.vad_max_recording_s = vad_max_recording_s
         self.streaming_playback = streaming_playback
         self.transport_mode = transport_mode  # "websocket", "sse", or "batch"
         self.auto_greet_first_turn = auto_greet_first_turn
-        self.voice_barge_in = voice_barge_in
-        self.barge_in_threshold = barge_in_threshold
-        self.barge_in_consecutive_frames = barge_in_consecutive_frames
-        self.barge_in_grace_period_s = barge_in_grace_period_s
         self.is_first_turn = True
-        self.interruption_prefix_audio: List[bytes] = []
-
-    def trigger_interrupt(self) -> None:
-        """Signals active speech playback to halt immediately and transition to listening."""
-        self.interrupt_event.set()
 
     def stop(self) -> None:
         """Signals the worker loop to stop after the current step."""
         self.stop_event.set()
-        self.interrupt_event.set()
 
     def run(self) -> None:
         """Continuous listen-think-speak loop while active."""
@@ -83,15 +67,11 @@ class AudioWorker(threading.Thread):
             try:
                 # 1. Record user speech from microphone (VAD-streamed or fixed duration)
                 self.ui_queue.put(("STATUS", "🎙️ Listening... Speak now!"))
-                prefix_frames = self.interruption_prefix_audio
-                self.interruption_prefix_audio = []
-
                 if self.use_vad:
                     raw_wav = self.recorder.record_with_vad(
                         device_index=self.device_index,
                         silence_duration_s=self.vad_silence_duration_s,
                         max_recording_s=self.vad_max_recording_s,
-                        initial_audio_frames=prefix_frames if prefix_frames else None,
                     )
                 else:
                     raw_wav = self.recorder.record(
@@ -136,7 +116,7 @@ class AudioWorker(threading.Thread):
     def _play_random_greeting(self) -> bool:
         """Instantly plays a random pre-recorded greeting on first voice detection.
 
-        Returns True if handled (completed or interrupted), False if failed (allowing fallback to normal processing).
+        Returns True if successful, False if failed or cancelled (allowing fallback to normal processing).
         """
         if self.stop_event.is_set():
             return False
@@ -176,12 +156,7 @@ class AudioWorker(threading.Thread):
                 )
             )
 
-            interrupted, speech_frames = self._play_audio_interruptible(wav_bytes)
-            if interrupted:
-                self.is_first_turn = False
-                self.interruption_prefix_audio = speech_frames
-                self.ui_queue.put(("STATUS", "⚡ Greeting interrupted! Listening to your reply..."))
-                return True
+            self._play_audio_blocking(wav_bytes)
 
             if not self.stop_event.is_set():
                 time.sleep(0.3)  # Acoustic cooldown
@@ -251,14 +226,7 @@ class AudioWorker(threading.Thread):
                         if chunk_b64 and not self.stop_event.is_set():
                             self.ui_queue.put(("STATUS", f"💀 Speaking: \"{chunk_text}\""))
                             wav_bytes = base64.b64decode(chunk_b64)
-                            interrupted, speech_frames = self._play_audio_interruptible(
-                                wav_bytes,
-                                on_barge_in=lambda: self._safe_ws_barge_in(ws),
-                            )
-                            if interrupted:
-                                self.interruption_prefix_audio = speech_frames
-                                self.ui_queue.put(("STATUS", "⚡ Interrupted! Listening to your reply..."))
-                                break
+                            self._play_audio_blocking(wav_bytes)
 
                     elif event_type == "done":
                         total_latency_ms = payload.get("total_latency_ms", 0.0)
@@ -340,12 +308,7 @@ class AudioWorker(threading.Thread):
                             if chunk_b64 and not self.stop_event.is_set():
                                 self.ui_queue.put(("STATUS", f"💀 Speaking: \"{chunk_text}\""))
                                 wav_bytes = base64.b64decode(chunk_b64)
-                                interrupted, speech_frames = self._play_audio_interruptible(wav_bytes)
-                                if interrupted:
-                                    self.interruption_prefix_audio = speech_frames
-                                    self.ui_queue.put(("STATUS", "⚡ Interrupted! Listening to your reply..."))
-                                    resp.close()
-                                    break
+                                self._play_audio_blocking(wav_bytes)
 
                         elif event_type == "done":
                             total_latency_ms = payload.get("total_latency_ms", 0.0)
@@ -405,53 +368,15 @@ class AudioWorker(threading.Thread):
             )
         )
 
-        # 3. Vocalize response over speakers (interruptible + acoustic echo cooldown)
+        # 3. Vocalize response over speakers (blocking + acoustic echo cooldown)
         if audio_b64 and not self.stop_event.is_set():
             self.ui_queue.put(("STATUS", "💀 Speaking response..."))
             wav_bytes = base64.b64decode(audio_b64)
-            interrupted, speech_frames = self._play_audio_interruptible(wav_bytes)
-            if interrupted:
-                self.interruption_prefix_audio = speech_frames
-                self.ui_queue.put(("STATUS", "⚡ Interrupted! Listening to your reply..."))
-            else:
-                time.sleep(0.3)
+            self._play_audio_blocking(wav_bytes)
+            time.sleep(0.3)
 
-    def _safe_ws_barge_in(self, ws) -> None:
-        """Safely sends a barge_in event over the WebSocket."""
-        try:
-            ws.send(json.dumps({"type": "barge_in"}))
-        except Exception:
-            pass
-
-    def _play_audio_interruptible(
-        self,
-        wav_bytes: bytes,
-        on_barge_in: Optional[Callable[[], None]] = None,
-    ) -> Tuple[bool, List[bytes]]:
-        """Plays PCM WAV audio through local speakers with concurrent microphone barge-in monitoring.
-
-        Returns:
-            Tuple of (interrupted: bool, captured_speech_frames: List[bytes]).
-        """
-        if not wav_bytes:
-            return False, []
-
-        if self.stop_event.is_set() or self.interrupt_event.is_set():
-            if on_barge_in:
-                try:
-                    on_barge_in()
-                except Exception:
-                    pass
-            self.interrupt_event.clear()
-            try:
-                sd.stop()
-            except Exception:
-                pass
-            return True, []
-
-        interrupted = False
-        captured_frames: List[bytes] = []
-
+    def _play_audio_blocking(self, wav_bytes: bytes) -> None:
+        """Plays PCM WAV audio through local speakers and waits for completion."""
         try:
             with io.BytesIO(wav_bytes) as buf:
                 with wave.open(buf, "rb") as wf:
@@ -462,106 +387,10 @@ class AudioWorker(threading.Thread):
                     if channels > 1:
                         audio_data = audio_data.reshape(-1, channels)
 
-            num_samples = len(audio_data) if channels == 1 else len(audio_data) // channels
-            duration_s = max(0.05, num_samples / float(rate))
-
-            t_start = time.perf_counter()
-            sd.play(audio_data, samplerate=rate)
-
-            # Initialize monitoring mic stream if voice barge-in is enabled and not mock recorder
-            mic_stream = None
-            vad = None
-            samples_per_frame = 480  # 30ms @ 16kHz
-            if self.voice_barge_in and not isinstance(self.recorder, MockAudioRecorder):
-                try:
-                    import webrtcvad
-                    vad = webrtcvad.Vad(2)
-                    mic_stream = sd.RawInputStream(
-                        samplerate=16000,
-                        blocksize=samples_per_frame,
-                        dtype="int16",
-                        channels=1,
-                        device=self.device_index,
-                    )
-                    mic_stream.start()
-                except Exception:
-                    mic_stream = None
-                    vad = None
-
-            consecutive_voiced = 0
-            provisional_frames: List[bytes] = []
-
-            try:
-                while True:
-                    if self.stop_event.is_set():
-                        interrupted = True
-                        break
-                    if self.interrupt_event.is_set():
-                        interrupted = True
-                        if on_barge_in:
-                            try:
-                                on_barge_in()
-                            except Exception:
-                                pass
-                        break
-
-                    elapsed = time.perf_counter() - t_start
-                    if elapsed >= duration_s:
-                        break
-
-                    if mic_stream is not None and vad is not None:
-                        try:
-                            frame_bytes, overflowed = mic_stream.read(samples_per_frame)
-                            if len(frame_bytes) == samples_per_frame * 2:
-                                if elapsed >= self.barge_in_grace_period_s:
-                                    raw_arr = np.frombuffer(frame_bytes, dtype=np.int16)
-                                    rms = float(np.sqrt(np.mean(np.square(raw_arr.astype(np.float32))))) / 32768.0
-                                    is_speech = vad.is_speech(bytes(frame_bytes), 16000)
-
-                                    if is_speech and rms >= self.barge_in_threshold:
-                                        consecutive_voiced += 1
-                                        provisional_frames.append(bytes(frame_bytes))
-                                        if consecutive_voiced >= self.barge_in_consecutive_frames:
-                                            interrupted = True
-                                            captured_frames = list(provisional_frames)
-                                            if on_barge_in:
-                                                try:
-                                                    on_barge_in()
-                                                except Exception:
-                                                    pass
-                                            break
-                                    else:
-                                        consecutive_voiced = 0
-                                        provisional_frames.clear()
-                        except Exception:
-                            time.sleep(0.01)
-                    else:
-                        time.sleep(0.02)
-            finally:
-                if mic_stream is not None:
-                    try:
-                        mic_stream.stop()
-                        mic_stream.close()
-                    except Exception:
-                        pass
-                    mic_stream = None
-
-                if interrupted:
-                    try:
-                        sd.stop()
-                    except Exception:
-                        pass
-                    time.sleep(0.025)  # 25ms hardware settling delay
-                self.interrupt_event.clear()
-
+                    sd.play(audio_data, samplerate=rate)
+                    sd.wait()
         except Exception as exc:
             self.ui_queue.put(("ERROR", f"Audio playback failed: {exc}"))
-
-        return interrupted, captured_frames
-
-    def _play_audio_blocking(self, wav_bytes: bytes) -> None:
-        """Plays PCM WAV audio through local speakers and waits for completion."""
-        self._play_audio_interruptible(wav_bytes)
 
 
 # ---------------------------------------------------------------------------
@@ -648,27 +477,9 @@ def launch_gui(base_url: str = "http://127.0.0.1:8000") -> None:
             )
             self.autogreet_check.pack(side=tk.LEFT, padx=(12, 0))
 
-            self.voice_barge_in_var = tk.BooleanVar(value=True)
-            self.bargein_check = tk.Checkbutton(
-                config_frame,
-                text="Voice Barge-In",
-                variable=self.voice_barge_in_var,
-                font=("Segoe UI", 9),
-                fg="#cdd6f4",
-                bg="#1e1e2e",
-                selectcolor="#313244",
-                activebackground="#1e1e2e",
-                activeforeground="#cdd6f4",
-            )
-            self.bargein_check.pack(side=tk.LEFT, padx=(10, 0))
-
-            # Master Control & Manual Interruption Frame
-            btn_frame = tk.Frame(self.root, bg="#1e1e2e")
-            btn_frame.pack(fill=tk.X, padx=16, pady=10)
-
             # Master ON / OFF Toggle Button
             self.toggle_btn = tk.Button(
-                btn_frame,
+                self.root,
                 text="🔴 LISTENING: OFF (Click to Start)",
                 font=("Segoe UI", 13, "bold"),
                 bg="#e78284",
@@ -681,28 +492,7 @@ def launch_gui(base_url: str = "http://127.0.0.1:8000") -> None:
                 cursor="hand2",
                 command=self._toggle_listening,
             )
-            self.toggle_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8))
-
-            # Instant Manual Interruption / Barge-in Button
-            self.interrupt_btn = tk.Button(
-                btn_frame,
-                text="⚡ Cut Off (Space)",
-                font=("Segoe UI", 11, "bold"),
-                bg="#fab387",
-                fg="#1e1e2e",
-                activebackground="#f9e2af",
-                activeforeground="#1e1e2e",
-                relief=tk.FLAT,
-                padx=14,
-                pady=10,
-                cursor="hand2",
-                state=tk.DISABLED,
-                command=self._on_manual_interrupt,
-            )
-            self.interrupt_btn.pack(side=tk.RIGHT)
-
-            # Bind Spacebar for hands-free or quick manual cutoff
-            self.root.bind("<space>", self._on_space_key)
+            self.toggle_btn.pack(fill=tk.X, padx=16, pady=10)
 
             # Status Banner
             self.status_lbl = tk.Label(
@@ -862,8 +652,6 @@ def launch_gui(base_url: str = "http://127.0.0.1:8000") -> None:
                 self.url_entry.config(state=tk.DISABLED)
                 self.transport_combo.config(state=tk.DISABLED)
                 self.autogreet_check.config(state=tk.DISABLED)
-                self.bargein_check.config(state=tk.DISABLED)
-                self.interrupt_btn.config(state=tk.NORMAL)
 
                 self.worker = AudioWorker(
                     base_url=target_url,
@@ -872,7 +660,6 @@ def launch_gui(base_url: str = "http://127.0.0.1:8000") -> None:
                     ui_queue=self.ui_queue,
                     transport_mode=selected_mode,
                     auto_greet_first_turn=self.autogreet_var.get(),
-                    voice_barge_in=self.voice_barge_in_var.get(),
                 )
                 self.worker.start()
             else:
@@ -887,25 +674,11 @@ def launch_gui(base_url: str = "http://127.0.0.1:8000") -> None:
                 self.url_entry.config(state=tk.NORMAL)
                 self.transport_combo.config(state="readonly")
                 self.autogreet_check.config(state=tk.NORMAL)
-                self.bargein_check.config(state=tk.NORMAL)
-                self.interrupt_btn.config(state=tk.DISABLED)
                 self.status_lbl.config(text="Status: Stopping listener...")
 
                 if self.worker is not None:
                     self.worker.stop()
                     self.worker = None
-
-        def _on_space_key(self, event=None):
-            """Spacebar hotkey handler that ignores typing inside input fields."""
-            if event and hasattr(event, "widget") and event.widget == self.url_entry:
-                return
-            self._on_manual_interrupt()
-
-        def _on_manual_interrupt(self):
-            """Signals active worker to cut off current speaker output immediately."""
-            if self.worker is not None and self.is_listening:
-                self.worker.trigger_interrupt()
-                self.ui_queue.put(("STATUS", "⚡ Cutoff triggered!"))
 
         def _process_ui_queue(self):
             """Marshals events from worker thread strictly onto the Tkinter main thread."""

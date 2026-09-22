@@ -44,7 +44,6 @@ class BaseAudioRecorder:
         aggressiveness: int = 2,
         frame_duration_ms: int = 30,
         on_speech_start=None,
-        initial_audio_frames: Optional[List[bytes]] = None,
     ) -> bytes:
         """Records microphone audio using Voice Activity Detection (VAD) endpointing.
 
@@ -68,7 +67,6 @@ class BaseAudioRecorder:
         aggressiveness: int = 2,
         frame_duration_ms: int = 30,
         on_speech_start=None,
-        initial_audio_frames: Optional[List[bytes]] = None,
     ) -> bytes:
         return await asyncio.to_thread(
             self.record_with_vad,
@@ -78,7 +76,6 @@ class BaseAudioRecorder:
             aggressiveness=aggressiveness,
             frame_duration_ms=frame_duration_ms,
             on_speech_start=on_speech_start,
-            initial_audio_frames=initial_audio_frames,
         )
 
 
@@ -169,7 +166,6 @@ class AudioRecorder(BaseAudioRecorder):
         aggressiveness: int = 2,
         frame_duration_ms: int = 30,
         on_speech_start=None,
-        initial_audio_frames: Optional[List[bytes]] = None,
     ) -> bytes:
         """Records microphone speech streaming frames and endpoints via WebRTC VAD.
 
@@ -180,7 +176,6 @@ class AudioRecorder(BaseAudioRecorder):
             aggressiveness: VAD sensitivity (0=least aggressive, 3=most aggressive).
             frame_duration_ms: Frame chunk in ms (10, 20, or 30).
             on_speech_start: Optional callback invoked when speech onset is detected.
-            initial_audio_frames: Optional speech frames detected during barge-in to prepend.
 
         Returns:
             Standard 16-bit PCM WAV audio bytes.
@@ -205,10 +200,8 @@ class AudioRecorder(BaseAudioRecorder):
         ring_buffer_size = int(0.3 * 1000 / frame_duration_ms)
         ring_buffer: List[bytes] = []
 
-        voiced_frames: List[bytes] = list(initial_audio_frames) if initial_audio_frames else []
-        speech_started = bool(initial_audio_frames)
-        if speech_started and on_speech_start:
-            on_speech_start()
+        voiced_frames: List[bytes] = []
+        speech_started = False
         consecutive_silence = 0
 
         try:
@@ -316,22 +309,10 @@ class MockAudioRecorder(BaseAudioRecorder):
         aggressiveness: int = 2,
         frame_duration_ms: int = 30,
         on_speech_start=None,
-        initial_audio_frames: Optional[List[bytes]] = None,
     ) -> bytes:
         if on_speech_start:
             on_speech_start()
+        # Mock recorder simulates 1.0 second of speech followed by trailing silence
+        # which triggers the VAD endpoint after speech_duration + silence_duration
         mock_speech_duration = min(1.0, max_recording_s)
-        base_wav = self.record(duration_seconds=mock_speech_duration, device_index=device_index)
-        if initial_audio_frames:
-            initial_pcm = b"".join(initial_audio_frames)
-            with io.BytesIO(base_wav) as buf:
-                with wave.open(buf, "rb") as wf:
-                    existing_pcm = wf.readframes(wf.getnframes())
-            out_buf = io.BytesIO()
-            with wave.open(out_buf, "wb") as out_wf:
-                out_wf.setnchannels(1)
-                out_wf.setsampwidth(2)
-                out_wf.setframerate(self.sample_rate)
-                out_wf.writeframes(initial_pcm + existing_pcm)
-            return out_buf.getvalue()
-        return base_wav
+        return self.record(duration_seconds=mock_speech_duration, device_index=device_index)

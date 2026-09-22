@@ -39,9 +39,9 @@ class BaseAudioRecorder:
     def record_with_vad(
         self,
         device_index: Optional[int] = None,
-        silence_duration_s: float = 0.45,
+        silence_duration_s: float = 0.25,
         max_recording_s: float = 10.0,
-        aggressiveness: int = 2,
+        aggressiveness: int = 3,
         frame_duration_ms: int = 30,
         on_speech_start=None,
     ) -> bytes:
@@ -62,9 +62,9 @@ class BaseAudioRecorder:
     async def record_with_vad_async(
         self,
         device_index: Optional[int] = None,
-        silence_duration_s: float = 0.45,
+        silence_duration_s: float = 0.25,
         max_recording_s: float = 10.0,
-        aggressiveness: int = 2,
+        aggressiveness: int = 3,
         frame_duration_ms: int = 30,
         on_speech_start=None,
     ) -> bytes:
@@ -161,9 +161,9 @@ class AudioRecorder(BaseAudioRecorder):
     def record_with_vad(
         self,
         device_index: Optional[int] = None,
-        silence_duration_s: float = 0.45,
+        silence_duration_s: float = 0.25,
         max_recording_s: float = 10.0,
-        aggressiveness: int = 2,
+        aggressiveness: int = 3,
         frame_duration_ms: int = 30,
         on_speech_start=None,
     ) -> bytes:
@@ -304,9 +304,9 @@ class MockAudioRecorder(BaseAudioRecorder):
     def record_with_vad(
         self,
         device_index: Optional[int] = None,
-        silence_duration_s: float = 0.45,
+        silence_duration_s: float = 0.25,
         max_recording_s: float = 10.0,
-        aggressiveness: int = 2,
+        aggressiveness: int = 3,
         frame_duration_ms: int = 30,
         on_speech_start=None,
     ) -> bytes:

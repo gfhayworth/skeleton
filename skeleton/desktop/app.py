@@ -3,24 +3,29 @@
 import base64
 import io
 import json
+import logging
 import os
 import queue
+import random
 import sys
 import threading
 import time
 import wave
-from typing import Optional
+from typing import Any, Dict, List, Optional
 import httpx
 import numpy as np
 import sounddevice as sd
 
 from skeleton.audio.recorder import AudioRecorder, BaseAudioRecorder, MockAudioRecorder
 
+logger = logging.getLogger(__name__)
+
 
 class AudioWorker(threading.Thread):
     """Background worker thread that records microphone audio, sends it to /audio_in,
 
-    and vocalizes the skeleton's response through speakers with acoustic echo protection.
+    and vocalizes the skeleton's response through speakers with acoustic echo protection
+    and instant filler acoustic masking to eliminate thinking latency.
     """
 
     def __init__(
@@ -32,11 +37,13 @@ class AudioWorker(threading.Thread):
         ui_queue: Optional[queue.Queue] = None,
         http_client: Optional[httpx.Client] = None,
         use_vad: bool = True,
-        vad_silence_duration_s: float = 0.45,
+        vad_silence_duration_s: float = 0.25,
+        vad_aggressiveness: int = 3,
         vad_max_recording_s: float = 10.0,
         streaming_playback: bool = True,
         transport_mode: str = "websocket",
         auto_greet_first_turn: bool = True,
+        use_acoustic_filler: bool = True,
     ):
         super().__init__(daemon=True)
         self.base_url = base_url.rstrip("/")
@@ -49,15 +56,58 @@ class AudioWorker(threading.Thread):
         self.stop_event = threading.Event()
         self.use_vad = use_vad
         self.vad_silence_duration_s = vad_silence_duration_s
+        self.vad_aggressiveness = vad_aggressiveness
         self.vad_max_recording_s = vad_max_recording_s
         self.streaming_playback = streaming_playback
         self.transport_mode = transport_mode  # "websocket", "sse", or "batch"
         self.auto_greet_first_turn = auto_greet_first_turn
+        self.use_acoustic_filler = use_acoustic_filler
         self.is_first_turn = True
+        self._cached_fillers: List[Dict[str, Any]] = []
+        self._load_cached_fillers()
+
+    def _load_cached_fillers(self) -> None:
+        """Pre-loads filler sound clips into memory for instant (< 5ms) acoustic playback."""
+        try:
+            from skeleton.audio.sounds import SoundBank, SoundCategory
+            bank = SoundBank()
+            fillers = bank.get_by_category(SoundCategory.FILLER)
+            for f in fillers:
+                if f.audio_bytes:
+                    self._cached_fillers.append({
+                        "sound_id": f.sound_id,
+                        "text": f.text,
+                        "wav_bytes": f.audio_bytes,
+                    })
+        except Exception as exc:
+            logger.debug("Failed to pre-cache filler sounds: %s", exc)
+
+    def _play_random_filler_async(self) -> None:
+        """Plays a pre-recorded filler sound asynchronously to mask LLM/TTS thinking latency."""
+        if not self.use_acoustic_filler or not self._cached_fillers or self.stop_event.is_set():
+            return
+        filler = random.choice(self._cached_fillers)
+        self.ui_queue.put(("STATUS", f"🤔 Pondering: \"{filler['text']}\""))
+        try:
+            with io.BytesIO(filler["wav_bytes"]) as buf:
+                with wave.open(buf, "rb") as wf:
+                    channels = wf.getnchannels()
+                    rate = wf.getframerate()
+                    frames = wf.readframes(wf.getnframes())
+                    audio_data = np.frombuffer(frames, dtype=np.int16)
+                    if channels > 1:
+                        audio_data = audio_data.reshape(-1, channels)
+                    sd.play(audio_data, samplerate=rate)
+        except Exception as exc:
+            logger.debug("Acoustic filler playback failed: %s", exc)
 
     def stop(self) -> None:
         """Signals the worker loop to stop after the current step."""
         self.stop_event.set()
+        try:
+            sd.stop()
+        except Exception:
+            pass
 
     def run(self) -> None:
         """Continuous listen-think-speak loop while active."""
@@ -72,6 +122,7 @@ class AudioWorker(threading.Thread):
                         device_index=self.device_index,
                         silence_duration_s=self.vad_silence_duration_s,
                         max_recording_s=self.vad_max_recording_s,
+                        aggressiveness=self.vad_aggressiveness,
                     )
                 else:
                     raw_wav = self.recorder.record(
@@ -91,6 +142,11 @@ class AudioWorker(threading.Thread):
 
                 # 3. Process audio: choose between websocket duplex, streaming SSE, or batch /audio_in
                 self.ui_queue.put(("STATUS", "⚡ Thinking (transcribing & evaluating)..."))
+
+                # Play instant acoustic filler sound in background to mask thinking latency
+                if self.use_acoustic_filler and not self.stop_event.is_set():
+                    self._play_random_filler_async()
+
                 files = {"file": ("speech.wav", raw_wav, "audio/wav")}
 
                 if self.transport_mode == "websocket":
@@ -377,7 +433,18 @@ class AudioWorker(threading.Thread):
 
     def _play_audio_blocking(self, wav_bytes: bytes) -> None:
         """Plays PCM WAV audio through local speakers and waits for completion."""
+        if self.stop_event.is_set():
+            return
         try:
+            # Wait cleanly for any active acoustic filler playback to conclude
+            try:
+                sd.wait()
+            except Exception:
+                pass
+
+            if self.stop_event.is_set():
+                return
+
             with io.BytesIO(wav_bytes) as buf:
                 with wave.open(buf, "rb") as wf:
                     channels = wf.getnchannels()
@@ -476,6 +543,20 @@ def launch_gui(base_url: str = "http://127.0.0.1:8000") -> None:
                 activeforeground="#cdd6f4",
             )
             self.autogreet_check.pack(side=tk.LEFT, padx=(12, 0))
+
+            self.filler_var = tk.BooleanVar(value=True)
+            self.filler_check = tk.Checkbutton(
+                config_frame,
+                text="Acoustic Filler",
+                variable=self.filler_var,
+                font=("Segoe UI", 9),
+                fg="#cdd6f4",
+                bg="#1e1e2e",
+                selectcolor="#313244",
+                activebackground="#1e1e2e",
+                activeforeground="#cdd6f4",
+            )
+            self.filler_check.pack(side=tk.LEFT, padx=(10, 0))
 
             # Master ON / OFF Toggle Button
             self.toggle_btn = tk.Button(
@@ -652,6 +733,7 @@ def launch_gui(base_url: str = "http://127.0.0.1:8000") -> None:
                 self.url_entry.config(state=tk.DISABLED)
                 self.transport_combo.config(state=tk.DISABLED)
                 self.autogreet_check.config(state=tk.DISABLED)
+                self.filler_check.config(state=tk.DISABLED)
 
                 self.worker = AudioWorker(
                     base_url=target_url,
@@ -660,6 +742,7 @@ def launch_gui(base_url: str = "http://127.0.0.1:8000") -> None:
                     ui_queue=self.ui_queue,
                     transport_mode=selected_mode,
                     auto_greet_first_turn=self.autogreet_var.get(),
+                    use_acoustic_filler=self.filler_var.get(),
                 )
                 self.worker.start()
             else:
@@ -674,6 +757,7 @@ def launch_gui(base_url: str = "http://127.0.0.1:8000") -> None:
                 self.url_entry.config(state=tk.NORMAL)
                 self.transport_combo.config(state="readonly")
                 self.autogreet_check.config(state=tk.NORMAL)
+                self.filler_check.config(state=tk.NORMAL)
                 self.status_lbl.config(text="Status: Stopping listener...")
 
                 if self.worker is not None:

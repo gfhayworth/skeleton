@@ -251,3 +251,20 @@ def test_audio_recorder_record_with_vad_streaming_mock():
         assert wf.getsampwidth() == 2
         assert wf.getframerate() == 16000
 
+
+def test_audio_recorder_record_with_vad_defaults():
+    import inspect
+    from skeleton.audio.config import AudioConfig
+
+    cfg = AudioConfig()
+    assert cfg.vad_silence_duration_s == 0.25
+    assert cfg.vad_aggressiveness == 3
+
+    sig = inspect.signature(AudioRecorder.record_with_vad)
+    assert sig.parameters["silence_duration_s"].default == 0.25
+    assert sig.parameters["aggressiveness"].default == 3
+
+    mock_sig = inspect.signature(MockAudioRecorder.record_with_vad)
+    assert mock_sig.parameters["silence_duration_s"].default == 0.25
+    assert mock_sig.parameters["aggressiveness"].default == 3
+

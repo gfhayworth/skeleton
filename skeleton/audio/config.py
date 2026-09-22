@@ -49,7 +49,7 @@ class AudioConfig(BaseSettings):
         description="Whether to use Voice Activity Detection (VAD) for dynamic speech endpointing.",
     )
     vad_aggressiveness: int = Field(
-        default=2,
+        default=3,
         ge=0,
         le=3,
         description="WebRTC VAD aggressiveness mode (0=least aggressive, 3=most aggressive).",
@@ -59,7 +59,7 @@ class AudioConfig(BaseSettings):
         description="VAD frame chunk duration in milliseconds (must be 10, 20, or 30).",
     )
     vad_silence_duration_s: float = Field(
-        default=0.45,
+        default=0.25,
         ge=0.1,
         le=3.0,
         description="Duration of trailing silence in seconds to trigger speech endpointing.",

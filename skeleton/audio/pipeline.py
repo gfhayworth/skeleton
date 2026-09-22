@@ -1,7 +1,9 @@
 """Unified end-to-end audio pipeline coordinating STT, dialogue, TTS, and mouth sync."""
 
+import io
 import time
-from typing import List, Optional, Union
+import wave
+from typing import AsyncGenerator, List, Optional, Tuple, Union
 from pydantic import BaseModel, Field
 from skeleton.audio.config import AudioConfig
 from skeleton.audio.mouth_sync import MouthSyncFrame, MouthSyncProcessor
@@ -21,6 +23,23 @@ class AudioDialogueResponse(BaseModel):
     audio_bytes: bytes = Field(..., description="Synthesized deep male WAV audio.")
     mouth_frames: List[MouthSyncFrame] = Field(..., description="30Hz synchronized jaw servo trajectory.")
     total_latency_ms: float = Field(..., description="Total roundtrip turnaround time in milliseconds.")
+    time_to_first_audio_ms: Optional[float] = Field(
+        default=None,
+        description="Time in milliseconds to synthesize and produce the first streaming voice chunk.",
+    )
+
+
+class AudioChunkResponse(BaseModel):
+    """A streaming voice and mouth synchronization chunk for real-time playback."""
+
+    chunk_index: int = Field(..., description="0-indexed sequence of this speech chunk.")
+    is_final: bool = Field(..., description="True if this is the terminating chunk of the response.")
+    text: str = Field(..., description="Sanitized dialogue text fragment.")
+    audio_bytes: bytes = Field(..., description="Synthesized WAV audio chunk.")
+    mouth_frames: List[MouthSyncFrame] = Field(..., description="30Hz jaw-sync frame trajectory for this chunk.")
+    latency_ms: float = Field(..., description="Elapsed milliseconds from turn start until chunk readiness.")
+    cumulative_duration_s: float = Field(..., description="Total audio seconds elapsed before this chunk.")
+
 
 
 class SkeletonAudioPipeline:
@@ -108,44 +127,135 @@ class SkeletonAudioPipeline:
         )
         return response
 
+    async def process_text_stream(
+        self,
+        user_transcript: str,
+        vision_context: Optional[VisionContext] = None,
+        t0: Optional[float] = None,
+    ) -> AsyncGenerator[AudioChunkResponse, None]:
+        """Streams synthesized voice chunks and real-time jaw-sync frames as dialogue is generated.
+
+        This drastically reduces Time-To-First-Audio (TTFA) to the latency of the first sentence
+        chunk, allowing audio playback and skull jaw movement to begin immediately.
+        """
+        if t0 is None:
+            t0 = time.perf_counter()
+
+        cumulative_duration_s = 0.0
+        cumulative_time_offset_ms = 0.0
+
+        async for chunk in self.orchestrator.process_utterance(user_transcript, vision_context):
+            chunk_text = chunk.text.strip()
+            if not chunk_text:
+                continue
+
+            # Synthesize voice chunk immediately
+            chunk_wav = await self.tts_client.synthesize(
+                chunk_text,
+                voice=self.config.tts_voice,
+                speed=self.config.tts_speed,
+                response_format=self.config.tts_format,
+            )
+
+            # Compute mouth frames offset by previously emitted audio duration
+            chunk_frames = self.mouth_sync.extract_jaw_trajectory(
+                chunk_wav,
+                time_offset_ms=cumulative_time_offset_ms,
+            )
+
+            # Measure duration of this WAV chunk to update timeline offset
+            try:
+                with wave.open(io.BytesIO(chunk_wav), "rb") as wf:
+                    frames_count = wf.getnframes()
+                    rate = wf.getframerate()
+                    chunk_duration_s = frames_count / float(rate) if rate > 0 else 0.0
+            except Exception:
+                chunk_duration_s = len(chunk_frames) / float(self.config.mouth_fps)
+
+            now_ms = (time.perf_counter() - t0) * 1000.0
+
+            yield AudioChunkResponse(
+                chunk_index=chunk.sequence_index,
+                is_final=chunk.is_final,
+                text=chunk_text,
+                audio_bytes=chunk_wav,
+                mouth_frames=chunk_frames,
+                latency_ms=round(now_ms, 2),
+                cumulative_duration_s=round(cumulative_duration_s, 3),
+            )
+
+            cumulative_duration_s += chunk_duration_s
+            cumulative_time_offset_ms += chunk_duration_s * 1000.0
+
     async def process_text_turn(
         self,
         user_transcript: str,
         vision_context: Optional[VisionContext] = None,
         t0: Optional[float] = None,
     ) -> AudioDialogueResponse:
-        """Processes text input directly into spoken skeleton audio and mouth-sync frames."""
+        """Processes text input into spoken skeleton audio and mouth-sync frames.
+
+        Uses streaming chunk synthesis underneath so Time-To-First-Audio is tracked.
+        """
         if t0 is None:
             t0 = time.perf_counter()
 
-        # 1. Generate dialogue from LLM
-        chunks: List[str] = []
-        async for chunk in self.orchestrator.process_utterance(user_transcript, vision_context):
-            chunks.append(chunk.text)
+        text_chunks: List[str] = []
+        raw_pcm_chunks: List[bytes] = []
+        all_mouth_frames: List[MouthSyncFrame] = []
+        time_to_first_audio_ms: Optional[float] = None
 
-        full_skeleton_text = " ".join(chunks).strip()
+        sample_rate = self.config.sample_rate
+        sample_width = 2
+        num_channels = 1
+
+        async for chunk_resp in self.process_text_stream(user_transcript, vision_context=vision_context, t0=t0):
+            if time_to_first_audio_ms is None:
+                time_to_first_audio_ms = chunk_resp.latency_ms
+
+            text_chunks.append(chunk_resp.text)
+            all_mouth_frames.extend(chunk_resp.mouth_frames)
+
+            # Extract PCM audio bytes from WAV
+            try:
+                with wave.open(io.BytesIO(chunk_resp.audio_bytes), "rb") as wf:
+                    num_channels = wf.getnchannels()
+                    sample_width = wf.getsampwidth()
+                    sample_rate = wf.getframerate()
+                    raw_pcm_chunks.append(wf.readframes(wf.getnframes()))
+            except Exception:
+                pass
+
+        full_skeleton_text = " ".join(text_chunks).strip()
         if not full_skeleton_text:
             full_skeleton_text = "I have nothing to say to that."
-
-        # 2. Synthesize deep male voice (onyx @ 0.90x in WAV)
-        wav_audio = await self.tts_client.synthesize(
-            full_skeleton_text,
-            voice=self.config.tts_voice,
-            speed=self.config.tts_speed,
-            response_format=self.config.tts_format,
-        )
-
-        # 3. Extract 30Hz jaw-opening trajectory
-        mouth_frames = self.mouth_sync.extract_jaw_trajectory(wav_audio)
+            fallback_wav = await self.tts_client.synthesize(
+                full_skeleton_text,
+                voice=self.config.tts_voice,
+                speed=self.config.tts_speed,
+                response_format=self.config.tts_format,
+            )
+            all_mouth_frames = self.mouth_sync.extract_jaw_trajectory(fallback_wav)
+            combined_wav = fallback_wav
+        else:
+            # Assemble seamless combined WAV file
+            combined_buf = io.BytesIO()
+            with wave.open(combined_buf, "wb") as wf:
+                wf.setnchannels(num_channels)
+                wf.setsampwidth(sample_width)
+                wf.setframerate(sample_rate)
+                wf.writeframes(b"".join(raw_pcm_chunks))
+            combined_wav = combined_buf.getvalue()
 
         elapsed_ms = (time.perf_counter() - t0) * 1000.0
 
         return AudioDialogueResponse(
             user_transcript=user_transcript,
             skeleton_response=full_skeleton_text,
-            audio_bytes=wav_audio,
-            mouth_frames=mouth_frames,
+            audio_bytes=combined_wav,
+            mouth_frames=all_mouth_frames,
             total_latency_ms=round(elapsed_ms, 2),
+            time_to_first_audio_ms=time_to_first_audio_ms,
         )
 
     def play_prerecorded_sound(

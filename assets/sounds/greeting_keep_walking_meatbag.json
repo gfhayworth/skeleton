@@ -1,7 +1,7 @@
 {
-  "sound_id": "laugh_evil_cackle",
-  "category": "laugh",
-  "text": "Ha ha ha ha ha! How delightfully pathetic.",
+  "sound_id": "greeting_keep_walking_meatbag",
+  "category": "greeting",
+  "text": "Keep walking, meatbag, you're embarrassing both of us.",
   "duration_s": 2.0,
   "mouth_frames": [
     {

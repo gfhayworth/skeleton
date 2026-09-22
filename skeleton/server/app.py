@@ -1,15 +1,18 @@
 """FastAPI audio service exposing /audio_in and /audio_out endpoints."""
 
 import base64
+import json
 import time
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Literal, Optional
-from fastapi import FastAPI, File, HTTPException, Query, Response, UploadFile, status
+from fastapi import FastAPI, File, HTTPException, Query, Response, UploadFile, WebSocket, status
 from pydantic import BaseModel, Field
+from sse_starlette.sse import EventSourceResponse
 
 from skeleton.audio.config import AudioConfig
 from skeleton.audio.mouth_sync import MouthSyncFrame
-from skeleton.audio.pipeline import AudioDialogueResponse, SkeletonAudioPipeline
+from skeleton.audio.pipeline import AudioChunkResponse, AudioDialogueResponse, SkeletonAudioPipeline
+from skeleton.server.ws import handle_websocket_audio
 
 
 class HealthResponse(BaseModel):
@@ -50,6 +53,23 @@ class AudioInResponse(BaseModel):
     audio_base64: str = Field(..., description="Synthesized deep male WAV audio encoded in base64.")
     mouth_frames: List[MouthSyncFrameModel] = Field(..., description="30Hz jaw-sync frame trajectory.")
     total_latency_ms: float = Field(..., description="Roundtrip processing time in milliseconds.")
+    time_to_first_audio_ms: Optional[float] = Field(
+        default=None,
+        description="Time to first voice audio chunk in milliseconds.",
+    )
+
+
+class AudioChunkStreamModel(BaseModel):
+    """Payload model for streamed Server-Sent Events voice chunks."""
+
+    event_type: Literal["transcript", "chunk", "done", "error"]
+    chunk_index: Optional[int] = None
+    is_final: Optional[bool] = None
+    text: Optional[str] = None
+    audio_base64: Optional[str] = None
+    mouth_frames: Optional[List[MouthSyncFrameModel]] = None
+    latency_ms: Optional[float] = None
+    cumulative_duration_s: Optional[float] = None
 
 
 class AudioOutRequest(BaseModel):
@@ -197,7 +217,70 @@ def create_app(custom_pipeline: Optional[SkeletonAudioPipeline] = None) -> FastA
             audio_base64=base64.b64encode(resp.audio_bytes).decode("ascii"),
             mouth_frames=_frames_to_models(resp.mouth_frames),
             total_latency_ms=resp.total_latency_ms,
+            time_to_first_audio_ms=resp.time_to_first_audio_ms,
         )
+
+    @app.post("/audio_in_stream")
+    async def audio_in_stream(file: UploadFile = File(...)) -> EventSourceResponse:
+        """Processes microphone audio and streams synthesized voice chunks via SSE in real time.
+
+        Drastically reduces voice response latency by sending each synthesized sentence clause
+        immediately as generated, alongside real-time 30Hz jaw servo trajectory frames.
+        """
+        if not file.filename:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Uploaded file must have a valid filename.",
+            )
+
+        raw_bytes = await file.read()
+        if len(raw_bytes) < 100:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Audio payload too small ({len(raw_bytes)} bytes); minimum 100 bytes required.",
+            )
+
+        pipeline: SkeletonAudioPipeline = app.state.pipeline
+
+        async def event_generator():
+            t0 = time.perf_counter()
+            try:
+                # 1. Transcribe audio input using Whisper
+                transcript = await pipeline.stt_client.transcribe(raw_bytes, filename=file.filename)
+                yield {
+                    "event": "transcript",
+                    "data": json.dumps({"transcript": transcript}),
+                }
+
+                # 2. Stream dialogue generation, TTS synthesis, and jaw sync frames
+                async for chunk in pipeline.process_text_stream(transcript, t0=t0):
+                    data = {
+                        "chunk_index": chunk.chunk_index,
+                        "is_final": chunk.is_final,
+                        "text": chunk.text,
+                        "audio_base64": base64.b64encode(chunk.audio_bytes).decode("ascii"),
+                        "mouth_frames": [m.model_dump() for m in _frames_to_models(chunk.mouth_frames)],
+                        "latency_ms": chunk.latency_ms,
+                        "cumulative_duration_s": chunk.cumulative_duration_s,
+                    }
+                    yield {
+                        "event": "chunk",
+                        "data": json.dumps(data),
+                    }
+
+                total_ms = (time.perf_counter() - t0) * 1000.0
+                yield {
+                    "event": "done",
+                    "data": json.dumps({"total_latency_ms": round(total_ms, 2)}),
+                }
+
+            except Exception as exc:
+                yield {
+                    "event": "error",
+                    "data": json.dumps({"error": str(exc)}),
+                }
+
+        return EventSourceResponse(event_generator())
 
     @app.post("/audio_out")
     async def audio_out(req: AudioOutRequest) -> Any:
@@ -239,6 +322,12 @@ def create_app(custom_pipeline: Optional[SkeletonAudioPipeline] = None) -> FastA
             mouth_frames=_frames_to_models(mouth_frames),
             latency_ms=round(elapsed_ms, 2),
         )
+
+    @app.websocket("/ws/audio")
+    async def ws_audio(websocket: WebSocket) -> None:
+        """Duplex WebSocket endpoint for real-time streaming audio I/O and barge-in control."""
+        pipeline: SkeletonAudioPipeline = app.state.pipeline
+        await handle_websocket_audio(websocket, pipeline)
 
     return app
 

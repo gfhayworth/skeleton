@@ -69,6 +69,7 @@ def test_audio_worker_websocket_cycle():
         ui_queue=ui_queue,
         transport_mode="websocket",
         auto_greet_first_turn=False,
+        use_acoustic_filler=False,
     )
 
     buf = io.BytesIO()
@@ -126,7 +127,7 @@ def test_audio_worker_websocket_cycle():
 
         mock_connect.assert_called_once_with("ws://127.0.0.1:8000/ws/audio")
         mock_play.assert_called_once()
-        mock_wait.assert_called_once()
+        assert mock_wait.call_count >= 1
 
         events = []
         while not ui_queue.empty():
@@ -157,6 +158,7 @@ def test_audio_worker_single_cycle():
         http_client=client,
         transport_mode="sse",
         auto_greet_first_turn=False,
+        use_acoustic_filler=False,
     )
 
     # Patch sounddevice play & wait and time.sleep to avoid hardware use and delays in CI
@@ -182,7 +184,7 @@ def test_audio_worker_single_cycle():
 
         # Verify sound playback was triggered and waited
         mock_play.assert_called_once()
-        mock_wait.assert_called_once()
+        assert mock_wait.call_count >= 1
 
     client.close()
 
@@ -342,7 +344,7 @@ def test_audio_worker_auto_greet_first_turn():
         worker.run()
 
         mock_play.assert_called_once()
-        mock_wait.assert_called_once()
+        assert mock_wait.call_count >= 1
 
     events = []
     while not ui_queue.empty():
@@ -395,4 +397,83 @@ def test_audio_worker_auto_greet_failure_falls_back():
         assert "Unfortunately, yes." in turn_data["skeleton"]
 
     test_client.close()
+
+
+def test_audio_worker_vad_and_filler_defaults():
+    worker = AudioWorker(
+        base_url="http://test",
+        recorder=MockAudioRecorder(),
+    )
+    assert worker.vad_silence_duration_s == 0.25
+    assert worker.vad_aggressiveness == 3
+    assert worker.use_acoustic_filler is True
+    assert len(worker._cached_fillers) > 0
+
+
+def test_audio_worker_acoustic_filler_playback():
+    """Verify AudioWorker plays an acoustic filler asynchronously when speech finishes."""
+    test_client = _make_test_client()
+    ui_queue = queue.Queue()
+    mock_recorder = MockAudioRecorder()
+
+    worker = AudioWorker(
+        base_url="http://test",
+        record_seconds=1.0,
+        recorder=mock_recorder,
+        ui_queue=ui_queue,
+        http_client=test_client,
+        transport_mode="sse",
+        auto_greet_first_turn=False,
+        use_acoustic_filler=True,
+    )
+
+    with patch.object(worker, "_play_random_filler_async", wraps=worker._play_random_filler_async) as mock_filler, \
+         patch("sounddevice.play") as mock_play, \
+         patch("sounddevice.wait") as mock_wait, \
+         patch("time.sleep") as mock_sleep:
+
+        mock_sleep.side_effect = lambda s: worker.stop()
+        worker.run()
+
+        # Acoustic filler should have been triggered
+        mock_filler.assert_called_once()
+        # Both filler playback and main speech playback should have occurred
+        assert mock_play.call_count == 2
+        # Wait should have been called (including pre-playback check)
+        assert mock_wait.call_count >= 1
+
+    test_client.close()
+
+
+def test_audio_worker_acoustic_filler_disabled():
+    """Verify that when use_acoustic_filler is False, no filler is triggered."""
+    test_client = _make_test_client()
+    ui_queue = queue.Queue()
+    mock_recorder = MockAudioRecorder()
+
+    worker = AudioWorker(
+        base_url="http://test",
+        record_seconds=1.0,
+        recorder=mock_recorder,
+        ui_queue=ui_queue,
+        http_client=test_client,
+        transport_mode="sse",
+        auto_greet_first_turn=False,
+        use_acoustic_filler=False,
+    )
+
+    with patch.object(worker, "_play_random_filler_async") as mock_filler, \
+         patch("sounddevice.play") as mock_play, \
+         patch("sounddevice.wait") as mock_wait, \
+         patch("time.sleep") as mock_sleep:
+
+        mock_sleep.side_effect = lambda s: worker.stop()
+        worker.run()
+
+        mock_filler.assert_not_called()
+        mock_play.assert_called_once()
+        assert mock_wait.call_count >= 1
+
+    test_client.close()
+
 

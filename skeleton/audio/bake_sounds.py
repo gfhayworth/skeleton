@@ -5,6 +5,7 @@ import asyncio
 import os
 import sys
 from pathlib import Path
+from typing import Optional
 
 # Ensure project root is on sys.path
 project_root = Path(__file__).resolve().parent.parent.parent
@@ -33,6 +34,56 @@ DEFAULT_SOUND_LIBRARY = [
         "sound_id": "filler_skull_hurts",
         "category": SoundCategory.FILLER,
         "text": "Give me a second, my empty skull is processing.",
+    },
+    {
+        "sound_id": "filler_hold_on_meatbag",
+        "category": SoundCategory.FILLER,
+        "text": "Hold on, meatbag.",
+    },
+    {
+        "sound_id": "filler_hold_your_bones",
+        "category": SoundCategory.FILLER,
+        "text": "Hold your bones.",
+    },
+    {
+        "sound_id": "filler_all_on_your_own",
+        "category": SoundCategory.FILLER,
+        "text": "Ooh... did you think that up all on your own?",
+    },
+    {
+        "sound_id": "filler_dont_rush_dead",
+        "category": SoundCategory.FILLER,
+        "text": "Hmm... don't rush the dead.",
+    },
+    {
+        "sound_id": "filler_second_genius",
+        "category": SoundCategory.FILLER,
+        "text": "Give me a second, genius.",
+    },
+    {
+        "sound_id": "filler_digging_up",
+        "category": SoundCategory.FILLER,
+        "text": "Digging up an answer now...",
+    },
+    {
+        "sound_id": "filler_consulting_crypt",
+        "category": SoundCategory.FILLER,
+        "text": "One moment, consulting the crypt.",
+    },
+    {
+        "sound_id": "filler_chew_on_that",
+        "category": SoundCategory.FILLER,
+        "text": "Hmm, let me chew on that.",
+    },
+    {
+        "sound_id": "filler_fascinating_second",
+        "category": SoundCategory.FILLER,
+        "text": "Fascinating... give me a second.",
+    },
+    {
+        "sound_id": "filler_dusty_gears",
+        "category": SoundCategory.FILLER,
+        "text": "Hang on, the dusty gears are turning.",
     },
     # 2. Greetings
     {
@@ -141,12 +192,32 @@ DEFAULT_SOUND_LIBRARY = [
 ]
 
 
-async def bake_sounds(output_dir: Path, use_mock: bool = False):
+async def bake_sounds(
+    output_dir: Path,
+    use_mock: bool = False,
+    category_filter: Optional[str] = None,
+    only_missing: bool = False,
+):
     """Generates audio for all library clips, extracts jaw trajectories, and saves them."""
     output_dir.mkdir(parents=True, exist_ok=True)
     config = AudioConfig()
     mouth_sync = MouthSyncProcessor(config)
     bank = SoundBank(sounds_dir=output_dir, config=config, mouth_sync=mouth_sync, autoload=False)
+
+    items_to_bake = list(DEFAULT_SOUND_LIBRARY)
+    if category_filter:
+        cat_norm = category_filter.strip().lower()
+        items_to_bake = [i for i in items_to_bake if i["category"].value.lower() == cat_norm]
+
+    if only_missing:
+        items_to_bake = [
+            i for i in items_to_bake
+            if not ((output_dir / f"{i['sound_id']}.wav").exists() and (output_dir / f"{i['sound_id']}.json").exists())
+        ]
+
+    if not items_to_bake:
+        print("[bake_sounds] No sounds to bake matching the specified filter criteria.")
+        return
 
     api_key_str = config.api_key.get_secret_value() if config.api_key else ""
     if use_mock:
@@ -163,8 +234,8 @@ async def bake_sounds(output_dir: Path, use_mock: bool = False):
         tts_client = OpenAITTSClient(config)
 
     try:
-        total = len(DEFAULT_SOUND_LIBRARY)
-        for idx, item in enumerate(DEFAULT_SOUND_LIBRARY, 1):
+        total = len(items_to_bake)
+        for idx, item in enumerate(items_to_bake, 1):
             sound_id = item["sound_id"]
             category = item["category"]
             text = item["text"]
@@ -213,12 +284,30 @@ def main():
         help="Directory to save generated WAV audio and JSON sidecars",
     )
     parser.add_argument(
+        "--category",
+        type=str,
+        default=None,
+        help="Filter baking to a specific category (e.g. 'filler', 'greeting', 'laugh')",
+    )
+    parser.add_argument(
+        "--only-missing",
+        action="store_true",
+        help="Only bake sound clips that do not already have both .wav and .json files in output directory",
+    )
+    parser.add_argument(
         "--mock",
         action="store_true",
         help="Force using MockTTSClient instead of OpenAI API",
     )
     args = parser.parse_args()
-    asyncio.run(bake_sounds(Path(args.output_dir), use_mock=args.mock))
+    asyncio.run(
+        bake_sounds(
+            Path(args.output_dir),
+            use_mock=args.mock,
+            category_filter=args.category,
+            only_missing=args.only_missing,
+        )
+    )
 
 
 if __name__ == "__main__":

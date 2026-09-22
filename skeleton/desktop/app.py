@@ -35,7 +35,7 @@ class AudioWorker(threading.Thread):
         vad_silence_duration_s: float = 0.45,
         vad_max_recording_s: float = 10.0,
         streaming_playback: bool = True,
-        transport_mode: str = "sse",
+        transport_mode: str = "websocket",
     ):
         super().__init__(daemon=True)
         self.base_url = base_url.rstrip("/")
@@ -188,6 +188,7 @@ class AudioWorker(threading.Thread):
         except Exception as exc:
             if not self.stop_event.is_set():
                 self.ui_queue.put(("ERROR", f"WebSocket turn error: {exc}"))
+                time.sleep(1.0)
 
     def _process_turn_streaming(self, files: dict) -> None:
         """Streams synthesized speech chunks as they are generated, achieving sub-second voice TTFA."""
@@ -373,16 +374,30 @@ def launch_gui(base_url: str = "http://127.0.0.1:8000") -> None:
             )
             title_lbl.pack(side=tk.LEFT)
 
-            # Server URL Config Frame
-            url_frame = tk.Frame(self.root, bg="#1e1e2e")
-            url_frame.pack(fill=tk.X, padx=16, pady=4)
+            # Server URL & Transport Config Frame
+            config_frame = tk.Frame(self.root, bg="#1e1e2e")
+            config_frame.pack(fill=tk.X, padx=16, pady=4)
 
-            tk.Label(url_frame, text="Server API:", font=("Segoe UI", 9), fg="#a6adc8", bg="#1e1e2e").pack(
+            tk.Label(config_frame, text="Server API:", font=("Segoe UI", 9), fg="#a6adc8", bg="#1e1e2e").pack(
                 side=tk.LEFT, padx=(0, 6)
             )
-            self.url_entry = tk.Entry(url_frame, font=("Segoe UI", 9), width=32, bg="#313244", fg="#cdd6f4")
+            self.url_entry = tk.Entry(config_frame, font=("Segoe UI", 9), width=24, bg="#313244", fg="#cdd6f4")
             self.url_entry.insert(0, base_url)
             self.url_entry.pack(side=tk.LEFT)
+
+            tk.Label(config_frame, text="Transport:", font=("Segoe UI", 9), fg="#a6adc8", bg="#1e1e2e").pack(
+                side=tk.LEFT, padx=(10, 6)
+            )
+            self.transport_var = tk.StringVar(value="WebSocket (Fastest)")
+            self.transport_combo = ttk.Combobox(
+                config_frame,
+                textvariable=self.transport_var,
+                values=["WebSocket (Fastest)", "SSE Streaming", "Batch HTTP"],
+                state="readonly",
+                width=18,
+                font=("Segoe UI", 9),
+            )
+            self.transport_combo.pack(side=tk.LEFT)
 
             # Master ON / OFF Toggle Button
             self.toggle_btn = tk.Button(
@@ -542,6 +557,13 @@ def launch_gui(base_url: str = "http://127.0.0.1:8000") -> None:
                     messagebox.showerror("Error", "Server API URL cannot be empty.")
                     return
 
+                mode_map = {
+                    "WebSocket (Fastest)": "websocket",
+                    "SSE Streaming": "sse",
+                    "Batch HTTP": "batch",
+                }
+                selected_mode = mode_map.get(self.transport_var.get(), "websocket")
+
                 self.is_listening = True
                 self.toggle_btn.config(
                     text="🟢 LISTENING: ON (Click to Stop)",
@@ -550,12 +572,14 @@ def launch_gui(base_url: str = "http://127.0.0.1:8000") -> None:
                     activebackground="#94e2d5",
                 )
                 self.url_entry.config(state=tk.DISABLED)
+                self.transport_combo.config(state=tk.DISABLED)
 
                 self.worker = AudioWorker(
                     base_url=target_url,
                     record_seconds=3.5,
                     use_vad=True,
                     ui_queue=self.ui_queue,
+                    transport_mode=selected_mode,
                 )
                 self.worker.start()
             else:
@@ -568,6 +592,7 @@ def launch_gui(base_url: str = "http://127.0.0.1:8000") -> None:
                     activebackground="#ea999c",
                 )
                 self.url_entry.config(state=tk.NORMAL)
+                self.transport_combo.config(state="readonly")
                 self.status_lbl.config(text="Status: Stopping listener...")
 
                 if self.worker is not None:

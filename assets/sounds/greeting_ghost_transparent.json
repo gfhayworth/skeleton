@@ -1,8 +1,8 @@
 {
-  "sound_id": "laugh_evil_cackle",
-  "category": "laugh",
-  "text": "Ha ha ha ha ha! How delightfully pathetic.",
-  "duration_s": 2.0,
+  "sound_id": "greeting_ghost_transparent",
+  "category": "greeting",
+  "text": "Are you a ghost? Because your presence is totally transparent.",
+  "duration_s": 2.5,
   "mouth_frames": [
     {
       "timestamp_ms": 0.0,
@@ -303,6 +303,81 @@
       "timestamp_ms": 1966.7,
       "jaw_angle_deg": 3.75,
       "normalized_open": 0.107
+    },
+    {
+      "timestamp_ms": 2000.0,
+      "jaw_angle_deg": 10.76,
+      "normalized_open": 0.307
+    },
+    {
+      "timestamp_ms": 2033.3,
+      "jaw_angle_deg": 18.03,
+      "normalized_open": 0.515
+    },
+    {
+      "timestamp_ms": 2066.7,
+      "jaw_angle_deg": 21.56,
+      "normalized_open": 0.616
+    },
+    {
+      "timestamp_ms": 2100.0,
+      "jaw_angle_deg": 19.44,
+      "normalized_open": 0.556
+    },
+    {
+      "timestamp_ms": 2133.3,
+      "jaw_angle_deg": 12.71,
+      "normalized_open": 0.363
+    },
+    {
+      "timestamp_ms": 2166.7,
+      "jaw_angle_deg": 5.08,
+      "normalized_open": 0.145
+    },
+    {
+      "timestamp_ms": 2200.0,
+      "jaw_angle_deg": 2.03,
+      "normalized_open": 0.058
+    },
+    {
+      "timestamp_ms": 2233.3,
+      "jaw_angle_deg": 1.1,
+      "normalized_open": 0.032
+    },
+    {
+      "timestamp_ms": 2266.7,
+      "jaw_angle_deg": 6.25,
+      "normalized_open": 0.179
+    },
+    {
+      "timestamp_ms": 2300.0,
+      "jaw_angle_deg": 14.03,
+      "normalized_open": 0.401
+    },
+    {
+      "timestamp_ms": 2333.3,
+      "jaw_angle_deg": 20.15,
+      "normalized_open": 0.576
+    },
+    {
+      "timestamp_ms": 2366.7,
+      "jaw_angle_deg": 21.34,
+      "normalized_open": 0.61
+    },
+    {
+      "timestamp_ms": 2400.0,
+      "jaw_angle_deg": 16.96,
+      "normalized_open": 0.485
+    },
+    {
+      "timestamp_ms": 2433.3,
+      "jaw_angle_deg": 9.21,
+      "normalized_open": 0.263
+    },
+    {
+      "timestamp_ms": 2466.7,
+      "jaw_angle_deg": 3.69,
+      "normalized_open": 0.105
     }
   ]
 }

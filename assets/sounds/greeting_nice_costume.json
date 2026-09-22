@@ -1,7 +1,7 @@
 {
-  "sound_id": "laugh_evil_cackle",
-  "category": "laugh",
-  "text": "Ha ha ha ha ha! How delightfully pathetic.",
+  "sound_id": "greeting_nice_costume",
+  "category": "greeting",
+  "text": "Nice costume! Oh wait, that's just your face.",
   "duration_s": 2.0,
   "mouth_frames": [
     {

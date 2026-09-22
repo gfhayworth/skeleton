@@ -66,13 +66,8 @@ def test_audio_worker_single_cycle():
     )
 
     # Patch sounddevice play & wait and time.sleep to avoid hardware use and delays in CI
-    with patch("sounddevice.play") as mock_play, patch("sounddevice.wait") as mock_wait, patch("time.sleep"):
-        # After audio playback finishes, stop worker so it exits cleanly
-        def wait_and_stop():
-            worker.stop()
-
-        mock_wait.side_effect = wait_and_stop
-
+    with patch("sounddevice.play") as mock_play, patch("sounddevice.wait") as mock_wait, patch("time.sleep") as mock_sleep:
+        mock_sleep.side_effect = lambda s: worker.stop()
         worker.run()
 
         # Collect events from ui_queue
@@ -147,7 +142,8 @@ def test_audio_worker_with_fixed_recording():
         http_client=client,
     )
 
-    with patch("sounddevice.play"), patch("sounddevice.wait", side_effect=worker.stop), patch("time.sleep"):
+    with patch("sounddevice.play"), patch("sounddevice.wait"), patch("time.sleep") as mock_sleep:
+        mock_sleep.side_effect = lambda s: worker.stop()
         worker.run()
 
     events = []

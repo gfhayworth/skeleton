@@ -36,14 +36,74 @@ DEFAULT_SOUND_LIBRARY = [
     },
     # 2. Greetings
     {
-        "sound_id": "greeting_look_who_it_is",
+        "sound_id": "greeting_nice_costume",
         "category": SoundCategory.GREETING,
-        "text": "Well, well. Look what wandered into my domain.",
+        "text": "Nice costume! Oh wait, that's just your face.",
     },
     {
-        "sound_id": "greeting_alive_still",
+        "sound_id": "greeting_no_guts_no_brains",
         "category": SoundCategory.GREETING,
-        "text": "Ah, you are still alive. How terribly disappointing.",
+        "text": "I have no guts, but you clearly have no brains.",
+    },
+    {
+        "sound_id": "greeting_trapped_in_cobweb",
+        "category": SoundCategory.GREETING,
+        "text": "I've seen scarier things trapped in a cobweb.",
+    },
+    {
+        "sound_id": "greeting_stray_dog_rejected",
+        "category": SoundCategory.GREETING,
+        "text": "You look like something a stray dog dug up and immediately rejected.",
+    },
+    {
+        "sound_id": "greeting_bone_to_pick",
+        "category": SoundCategory.GREETING,
+        "text": "I have a bone to pick with you, but you'd probably lose that too.",
+    },
+    {
+        "sound_id": "greeting_zombies_pass",
+        "category": SoundCategory.GREETING,
+        "text": "Even the zombies would pass on you—nothing to eat up there!",
+    },
+    {
+        "sound_id": "greeting_ghost_transparent",
+        "category": SoundCategory.GREETING,
+        "text": "Are you a ghost? Because your presence is totally transparent.",
+    },
+    {
+        "sound_id": "greeting_roll_eyes_decayed",
+        "category": SoundCategory.GREETING,
+        "text": "I would roll my eyes at you, but they decayed fifty years ago.",
+    },
+    {
+        "sound_id": "greeting_keep_walking_meatbag",
+        "category": SoundCategory.GREETING,
+        "text": "Keep walking, meatbag, you're embarrassing both of us.",
+    },
+    {
+        "sound_id": "greeting_dead_more_life",
+        "category": SoundCategory.GREETING,
+        "text": "I'm dead, and I still have more life in me than your conversation.",
+    },
+    {
+        "sound_id": "greeting_dust_off_tibia",
+        "category": SoundCategory.GREETING,
+        "text": "You couldn't scare the dust off my tibia.",
+    },
+    {
+        "sound_id": "greeting_skin_crawling_away",
+        "category": SoundCategory.GREETING,
+        "text": "If I had skin, it would be crawling away from you right now.",
+    },
+    {
+        "sound_id": "greeting_witch_curse",
+        "category": SoundCategory.GREETING,
+        "text": "Did a witch curse you, or did you just wake up looking like that?",
+    },
+    {
+        "sound_id": "greeting_gravestones_personality",
+        "category": SoundCategory.GREETING,
+        "text": "I’ve met gravestones with more personality.",
     },
     # 3. Laughs & Cackles
     {

@@ -68,6 +68,7 @@ def test_audio_worker_websocket_cycle():
         recorder=mock_recorder,
         ui_queue=ui_queue,
         transport_mode="websocket",
+        auto_greet_first_turn=False,
     )
 
     buf = io.BytesIO()
@@ -155,6 +156,7 @@ def test_audio_worker_single_cycle():
         ui_queue=ui_queue,
         http_client=client,
         transport_mode="sse",
+        auto_greet_first_turn=False,
     )
 
     # Patch sounddevice play & wait and time.sleep to avoid hardware use and delays in CI
@@ -195,6 +197,7 @@ def test_audio_worker_handles_server_error():
         recorder=mock_recorder,
         ui_queue=ui_queue,
         transport_mode="sse",
+        auto_greet_first_turn=False,
     )
 
     def handle_err(req):
@@ -234,6 +237,7 @@ def test_audio_worker_with_fixed_recording():
         ui_queue=ui_queue,
         http_client=client,
         transport_mode="sse",
+        auto_greet_first_turn=False,
     )
 
     with patch("sounddevice.play"), patch("sounddevice.wait"), patch("time.sleep") as mock_sleep:
@@ -297,3 +301,98 @@ def test_desktop_package_import_and_no_warnings():
     )
     assert res.returncode == 0
     assert "RuntimeWarning" not in res.stderr
+
+
+def test_audio_worker_auto_greet_first_turn():
+    """Verify that AudioWorker immediately plays a random greeting on first voice detection."""
+    test_client = _make_test_client()
+    pipeline = test_client.app.state.pipeline
+
+    # Register a greeting sound
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(16000)
+        wf.writeframes(b"\x00\x00" * 400)
+    pipeline.sound_bank.register_sound(
+        sound_id="test_greeting_nice_face",
+        category="greeting",
+        text="Nice costume! Oh wait, that's just your face.",
+        audio_bytes=buf.getvalue(),
+    )
+
+    ui_queue = queue.Queue()
+    mock_recorder = MockAudioRecorder()
+
+    worker = AudioWorker(
+        base_url="http://test",
+        record_seconds=1.0,
+        recorder=mock_recorder,
+        ui_queue=ui_queue,
+        http_client=test_client,
+        auto_greet_first_turn=True,
+    )
+
+    with patch("sounddevice.play") as mock_play, \
+         patch("sounddevice.wait") as mock_wait, \
+         patch("time.sleep") as mock_sleep:
+
+        mock_sleep.side_effect = lambda s: worker.stop()
+        worker.run()
+
+        mock_play.assert_called_once()
+        mock_wait.assert_called_once()
+
+    events = []
+    while not ui_queue.empty():
+        events.append(ui_queue.get_nowait())
+
+    turn_event = next(e for e in events if e[0] == "TURN")
+    turn_data = turn_event[1]
+    assert "[Voice Detected" in turn_data["user"]
+    valid_greetings = [s.text for s in pipeline.sound_bank.get_by_category("greeting")]
+    assert turn_data["skeleton"] in valid_greetings
+    assert not worker.is_first_turn
+
+    test_client.close()
+
+
+def test_audio_worker_auto_greet_failure_falls_back():
+    """Verify that if random greeting fails, AudioWorker gracefully falls back to normal conversational processing."""
+    test_client = _make_test_client()
+    ui_queue = queue.Queue()
+    mock_recorder = MockAudioRecorder()
+
+    worker = AudioWorker(
+        base_url="http://test",
+        record_seconds=1.0,
+        recorder=mock_recorder,
+        ui_queue=ui_queue,
+        http_client=test_client,
+        auto_greet_first_turn=True,
+        transport_mode="sse",
+    )
+
+    # Mock _play_random_greeting to simulate failure / network error
+    with patch.object(worker, "_play_random_greeting", return_value=False) as mock_greet, \
+         patch("sounddevice.play") as mock_play, \
+         patch("sounddevice.wait") as mock_wait, \
+         patch("time.sleep") as mock_sleep:
+
+        mock_sleep.side_effect = lambda s: worker.stop()
+        worker.run()
+
+        mock_greet.assert_called_once()
+        # Fallback to standard turn should have occurred
+        events = []
+        while not ui_queue.empty():
+            events.append(ui_queue.get_nowait())
+
+        turn_event = next(e for e in events if e[0] == "TURN")
+        turn_data = turn_event[1]
+        assert turn_data["user"] == "Is anyone there?"
+        assert "Unfortunately, yes." in turn_data["skeleton"]
+
+    test_client.close()
+

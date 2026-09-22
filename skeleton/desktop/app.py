@@ -36,6 +36,7 @@ class AudioWorker(threading.Thread):
         vad_max_recording_s: float = 10.0,
         streaming_playback: bool = True,
         transport_mode: str = "websocket",
+        auto_greet_first_turn: bool = True,
     ):
         super().__init__(daemon=True)
         self.base_url = base_url.rstrip("/")
@@ -51,6 +52,8 @@ class AudioWorker(threading.Thread):
         self.vad_max_recording_s = vad_max_recording_s
         self.streaming_playback = streaming_playback
         self.transport_mode = transport_mode  # "websocket", "sse", or "batch"
+        self.auto_greet_first_turn = auto_greet_first_turn
+        self.is_first_turn = True
 
     def stop(self) -> None:
         """Signals the worker loop to stop after the current step."""
@@ -79,7 +82,14 @@ class AudioWorker(threading.Thread):
                 if self.stop_event.is_set():
                     break
 
-                # 2. Process audio: choose between websocket duplex, streaming SSE, or batch /audio_in
+                # 2. Check for instant first-turn greeting
+                if self.auto_greet_first_turn and self.is_first_turn:
+                    self.is_first_turn = False
+                    if self._play_random_greeting():
+                        continue
+                    # Fail-safe: if greeting fails, fall through to normal conversational processing below!
+
+                # 3. Process audio: choose between websocket duplex, streaming SSE, or batch /audio_in
                 self.ui_queue.put(("STATUS", "⚡ Thinking (transcribing & evaluating)..."))
                 files = {"file": ("speech.wav", raw_wav, "audio/wav")}
 
@@ -102,6 +112,60 @@ class AudioWorker(threading.Thread):
                 self.client.close()
             except Exception:
                 pass
+
+    def _play_random_greeting(self) -> bool:
+        """Instantly plays a random pre-recorded greeting on first voice detection.
+
+        Returns True if successful, False if failed or cancelled (allowing fallback to normal processing).
+        """
+        if self.stop_event.is_set():
+            return False
+
+        t0 = time.perf_counter()
+        try:
+            self.ui_queue.put(("STATUS", "💀 Selecting instant greeting..."))
+            resp = self.client.post(f"{self.base_url}/play_sound/random?category=greeting")
+            if resp.status_code != 200:
+                self.ui_queue.put(("ERROR", f"Greeting request failed ({resp.status_code}), falling back to AI turn..."))
+                return False
+
+            if self.stop_event.is_set():
+                return False
+
+            data = resp.json()
+            sound_text = data.get("text", "")
+            b64 = data.get("audio_base64", "")
+            mouth_frames = data.get("mouth_frames", [])
+            elapsed_ms = (time.perf_counter() - t0) * 1000.0
+
+            if not b64:
+                return False
+
+            wav_bytes = base64.b64decode(b64)
+
+            self.ui_queue.put(("STATUS", f"💀 Greeting: \"{sound_text}\""))
+            self.ui_queue.put(
+                (
+                    "TURN",
+                    {
+                        "user": "[Voice Detected / First Interaction]",
+                        "skeleton": sound_text,
+                        "latency_ms": round(elapsed_ms, 2),
+                        "mouth_frames": len(mouth_frames),
+                    },
+                )
+            )
+
+            self._play_audio_blocking(wav_bytes)
+
+            if not self.stop_event.is_set():
+                time.sleep(0.3)  # Acoustic cooldown
+            return True
+
+        except Exception as exc:
+            if not self.stop_event.is_set():
+                self.ui_queue.put(("ERROR", f"Greeting playback failed: {exc}, falling back to AI turn..."))
+            return False
 
     def _process_turn_websocket(self, raw_wav: bytes) -> None:
         """Processes conversational turn over full-duplex WebSocket connection."""
@@ -399,6 +463,20 @@ def launch_gui(base_url: str = "http://127.0.0.1:8000") -> None:
             )
             self.transport_combo.pack(side=tk.LEFT)
 
+            self.autogreet_var = tk.BooleanVar(value=True)
+            self.autogreet_check = tk.Checkbutton(
+                config_frame,
+                text="Auto-Greet",
+                variable=self.autogreet_var,
+                font=("Segoe UI", 9),
+                fg="#cdd6f4",
+                bg="#1e1e2e",
+                selectcolor="#313244",
+                activebackground="#1e1e2e",
+                activeforeground="#cdd6f4",
+            )
+            self.autogreet_check.pack(side=tk.LEFT, padx=(12, 0))
+
             # Master ON / OFF Toggle Button
             self.toggle_btn = tk.Button(
                 self.root,
@@ -573,6 +651,7 @@ def launch_gui(base_url: str = "http://127.0.0.1:8000") -> None:
                 )
                 self.url_entry.config(state=tk.DISABLED)
                 self.transport_combo.config(state=tk.DISABLED)
+                self.autogreet_check.config(state=tk.DISABLED)
 
                 self.worker = AudioWorker(
                     base_url=target_url,
@@ -580,6 +659,7 @@ def launch_gui(base_url: str = "http://127.0.0.1:8000") -> None:
                     use_vad=True,
                     ui_queue=self.ui_queue,
                     transport_mode=selected_mode,
+                    auto_greet_first_turn=self.autogreet_var.get(),
                 )
                 self.worker.start()
             else:
@@ -593,6 +673,7 @@ def launch_gui(base_url: str = "http://127.0.0.1:8000") -> None:
                 )
                 self.url_entry.config(state=tk.NORMAL)
                 self.transport_combo.config(state="readonly")
+                self.autogreet_check.config(state=tk.NORMAL)
                 self.status_lbl.config(text="Status: Stopping listener...")
 
                 if self.worker is not None:

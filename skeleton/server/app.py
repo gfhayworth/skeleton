@@ -12,6 +12,7 @@ from sse_starlette.sse import EventSourceResponse
 from skeleton.audio.config import AudioConfig
 from skeleton.audio.mouth_sync import MouthSyncFrame
 from skeleton.audio.pipeline import AudioChunkResponse, AudioDialogueResponse, SkeletonAudioPipeline
+from skeleton.audio.sounds import SoundCategory
 from skeleton.server.ws import handle_websocket_audio
 
 
@@ -162,15 +163,29 @@ def create_app(custom_pipeline: Optional[SkeletonAudioPipeline] = None) -> FastA
     @app.post("/play_sound/{sound_id}")
     async def play_prerecorded_sound(
         sound_id: str,
+        category: Optional[SoundCategory] = Query(None, description="Optional category filter when sound_id is 'random'"),
         format: Optional[Literal["json", "binary"]] = Query("json", description="Response format"),
     ) -> Any:
         """Retrieves and returns pre-recorded audio and cached mouth trajectory instantly."""
         pipeline: SkeletonAudioPipeline = app.state.pipeline
-        sound = pipeline.sound_bank.get(sound_id)
+        if sound_id.lower() == "random":
+            sound = pipeline.sound_bank.get_random(category=category)
+        else:
+            sound = pipeline.sound_bank.get(sound_id)
+
         if sound is None:
+            detail_msg = (
+                f"No pre-recorded sounds available in category '{category.value if hasattr(category, 'value') else category}'."
+                if category
+                else (
+                    "No pre-recorded sounds available."
+                    if sound_id.lower() == "random"
+                    else f"Pre-recorded sound '{sound_id}' not found."
+                )
+            )
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Pre-recorded sound '{sound_id}' not found.",
+                detail=detail_msg,
             )
 
         if format == "binary":

@@ -171,3 +171,18 @@ async def test_sounds_list_and_play_endpoints():
         # 404 on nonexistent sound
         resp_404 = await client.post("/play_sound/not_real")
         assert resp_404.status_code == 404
+
+        # POST /play_sound/random with valid category
+        resp_rand = await client.post("/play_sound/random?category=laugh")
+        assert resp_rand.status_code == 200
+        rand_data = resp_rand.json()
+        assert len(rand_data["text"]) > 0
+        assert len(rand_data["audio_base64"]) > 50
+
+        # POST /play_sound/random with invalid category (FastAPI enum validation -> 422)
+        resp_invalid_cat = await client.post("/play_sound/random?category=not_a_category")
+        assert resp_invalid_cat.status_code == 422
+
+        # POST /play_sound/random with empty category -> 404
+        resp_empty_cat = await client.post("/play_sound/random?category=snark")
+        assert resp_empty_cat.status_code == 404

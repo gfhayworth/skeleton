@@ -1,7 +1,7 @@
 {
-  "sound_id": "laugh_evil_cackle",
-  "category": "laugh",
-  "text": "Ha ha ha ha ha! How delightfully pathetic.",
+  "sound_id": "greeting_dust_off_tibia",
+  "category": "greeting",
+  "text": "You couldn't scare the dust off my tibia.",
   "duration_s": 2.0,
   "mouth_frames": [
     {

@@ -1,7 +1,11 @@
-"""Unit tests for the desktop AudioWorker and controller state machine."""
+"""Unit tests for the desktop AudioWorker, transport modes, and controller state machine."""
 
+import base64
 import io
+import json
 import queue
+import subprocess
+import sys
 import time
 import wave
 from unittest.mock import MagicMock, patch
@@ -48,8 +52,95 @@ def test_audio_worker_init_and_stop():
         ui_queue=ui_queue,
     )
     assert not worker.stop_event.is_set()
+    assert worker.transport_mode == "websocket"
     worker.stop()
     assert worker.stop_event.is_set()
+
+
+def test_audio_worker_websocket_cycle():
+    """Verify AudioWorker executes conversational turn over WebSocket connection."""
+    ui_queue = queue.Queue()
+    mock_recorder = MockAudioRecorder()
+
+    worker = AudioWorker(
+        base_url="http://127.0.0.1:8000",
+        record_seconds=1.0,
+        recorder=mock_recorder,
+        ui_queue=ui_queue,
+        transport_mode="websocket",
+    )
+
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(16000)
+        wf.writeframes(b"\x00\x00" * 400)
+    dummy_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+
+    ws_messages = [
+        json.dumps({"event": "state", "data": {"state": "ready"}}),
+        json.dumps({"event": "state", "data": {"state": "listening"}}),
+        json.dumps({"event": "transcript", "data": {"transcript": "Who goes there?"}}),
+        json.dumps({
+            "event": "chunk",
+            "data": {
+                "text": "Only bones and shadows.",
+                "audio_base64": dummy_b64,
+                "latency_ms": 115.0,
+                "mouth_frames": [0.4, 0.7, 0.2],
+            },
+        }),
+        json.dumps({"event": "done", "data": {"total_latency_ms": 230.0}}),
+    ]
+
+    class MockWS:
+        def __init__(self, msgs):
+            self.msgs = list(msgs)
+            self.sent = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def recv(self):
+            if self.msgs:
+                return self.msgs.pop(0)
+            raise EOFError("No messages left")
+
+        def send(self, data):
+            self.sent.append(data)
+
+    mock_ws = MockWS(ws_messages)
+
+    with patch("websockets.sync.client.connect", return_value=mock_ws) as mock_connect, \
+         patch("sounddevice.play") as mock_play, \
+         patch("sounddevice.wait") as mock_wait, \
+         patch("time.sleep") as mock_sleep:
+
+        mock_sleep.side_effect = lambda s: worker.stop()
+        worker.run()
+
+        mock_connect.assert_called_once_with("ws://127.0.0.1:8000/ws/audio")
+        mock_play.assert_called_once()
+        mock_wait.assert_called_once()
+
+        events = []
+        while not ui_queue.empty():
+            events.append(ui_queue.get_nowait())
+
+        event_types = [e[0] for e in events]
+        assert "STATUS" in event_types
+        assert "TURN" in event_types
+
+        turn_event = next(e for e in events if e[0] == "TURN")
+        turn_data = turn_event[1]
+        assert turn_data["user"] == "Who goes there?"
+        assert "Only bones and shadows." in turn_data["skeleton"]
+        assert turn_data["mouth_frames"] == 3
+        assert turn_data["latency_ms"] == 115.0
 
 
 def test_audio_worker_single_cycle():
@@ -63,6 +154,7 @@ def test_audio_worker_single_cycle():
         recorder=mock_recorder,
         ui_queue=ui_queue,
         http_client=client,
+        transport_mode="sse",
     )
 
     # Patch sounddevice play & wait and time.sleep to avoid hardware use and delays in CI
@@ -102,6 +194,7 @@ def test_audio_worker_handles_server_error():
         record_seconds=1.0,
         recorder=mock_recorder,
         ui_queue=ui_queue,
+        transport_mode="sse",
     )
 
     def handle_err(req):
@@ -140,6 +233,7 @@ def test_audio_worker_with_fixed_recording():
         recorder=mock_recorder,
         ui_queue=ui_queue,
         http_client=client,
+        transport_mode="sse",
     )
 
     with patch("sounddevice.play"), patch("sounddevice.wait"), patch("time.sleep") as mock_sleep:
@@ -158,7 +252,6 @@ def test_audio_worker_with_fixed_recording():
 
 def test_desktop_sound_trigger_playback():
     """Verify pre-recorded sound trigger handler in desktop app plays audio and emits TURN event."""
-    # Instantiate test client
     test_client = _make_test_client()
     pipeline = test_client.app.state.pipeline
     buf = io.BytesIO()
@@ -183,3 +276,24 @@ def test_desktop_sound_trigger_playback():
     assert len(data["mouth_frames"]) > 0
     assert len(data["audio_base64"]) > 0
     test_client.close()
+
+
+def test_desktop_package_import_and_no_warnings():
+    """Verify package import and execution does not trigger RuntimeWarning."""
+    # Test importing via __getattr__
+    import skeleton.desktop as desktop_pkg
+    assert hasattr(desktop_pkg, "AudioWorker")
+    assert hasattr(desktop_pkg, "launch_gui")
+
+    # Verify invalid attribute raises AttributeError
+    with pytest.raises(AttributeError):
+        _ = desktop_pkg.non_existent_symbol
+
+    # Test subprocess execution with -W error
+    res = subprocess.run(
+        [sys.executable, "-W", "error", "-c", "import skeleton.desktop; from skeleton.desktop import AudioWorker, launch_gui; assert AudioWorker is not None; assert launch_gui is not None"],
+        capture_output=True,
+        text=True,
+    )
+    assert res.returncode == 0
+    assert "RuntimeWarning" not in res.stderr

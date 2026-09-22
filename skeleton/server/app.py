@@ -5,13 +5,14 @@ import json
 import time
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Literal, Optional
-from fastapi import FastAPI, File, HTTPException, Query, Response, UploadFile, status
+from fastapi import FastAPI, File, HTTPException, Query, Response, UploadFile, WebSocket, status
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
 from skeleton.audio.config import AudioConfig
 from skeleton.audio.mouth_sync import MouthSyncFrame
 from skeleton.audio.pipeline import AudioChunkResponse, AudioDialogueResponse, SkeletonAudioPipeline
+from skeleton.server.ws import handle_websocket_audio
 
 
 class HealthResponse(BaseModel):
@@ -321,6 +322,12 @@ def create_app(custom_pipeline: Optional[SkeletonAudioPipeline] = None) -> FastA
             mouth_frames=_frames_to_models(mouth_frames),
             latency_ms=round(elapsed_ms, 2),
         )
+
+    @app.websocket("/ws/audio")
+    async def ws_audio(websocket: WebSocket) -> None:
+        """Duplex WebSocket endpoint for real-time streaming audio I/O and barge-in control."""
+        pipeline: SkeletonAudioPipeline = app.state.pipeline
+        await handle_websocket_audio(websocket, pipeline)
 
     return app
 

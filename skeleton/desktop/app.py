@@ -2,6 +2,7 @@
 
 import base64
 import io
+import json
 import os
 import queue
 import sys
@@ -34,6 +35,7 @@ class AudioWorker(threading.Thread):
         vad_silence_duration_s: float = 0.45,
         vad_max_recording_s: float = 10.0,
         streaming_playback: bool = True,
+        transport_mode: str = "sse",
     ):
         super().__init__(daemon=True)
         self.base_url = base_url.rstrip("/")
@@ -48,6 +50,7 @@ class AudioWorker(threading.Thread):
         self.vad_silence_duration_s = vad_silence_duration_s
         self.vad_max_recording_s = vad_max_recording_s
         self.streaming_playback = streaming_playback
+        self.transport_mode = transport_mode  # "websocket", "sse", or "batch"
 
     def stop(self) -> None:
         """Signals the worker loop to stop after the current step."""
@@ -76,11 +79,13 @@ class AudioWorker(threading.Thread):
                 if self.stop_event.is_set():
                     break
 
-                # 2. Process audio: choose between ultra-low-latency streaming SSE or batch /audio_in
+                # 2. Process audio: choose between websocket duplex, streaming SSE, or batch /audio_in
                 self.ui_queue.put(("STATUS", "⚡ Thinking (transcribing & evaluating)..."))
                 files = {"file": ("speech.wav", raw_wav, "audio/wav")}
 
-                if self.streaming_playback:
+                if self.transport_mode == "websocket":
+                    self._process_turn_websocket(raw_wav)
+                elif self.streaming_playback and self.transport_mode == "sse":
                     self._process_turn_streaming(files)
                 else:
                     self._process_turn_batch(files)
@@ -97,6 +102,92 @@ class AudioWorker(threading.Thread):
                 self.client.close()
             except Exception:
                 pass
+
+    def _process_turn_websocket(self, raw_wav: bytes) -> None:
+        """Processes conversational turn over full-duplex WebSocket connection."""
+        from websockets.sync.client import connect
+
+        ws_url = self.base_url.replace("http://", "ws://").replace("https://", "wss://") + "/ws/audio"
+        user_transcript = ""
+        full_text_parts = []
+        total_mouth_frames = 0
+        total_latency_ms = 0.0
+        time_to_first_audio_ms = None
+
+        try:
+            with connect(ws_url) as ws:
+                # 1. Wait for server ready state
+                init_msg = json.loads(ws.recv())
+                if init_msg.get("event") != "state" or init_msg.get("data", {}).get("state") != "ready":
+                    pass
+
+                # 2. Send start_turn
+                ws.send(json.dumps({"type": "start_turn", "format": "wav"}))
+                state_ack = json.loads(ws.recv())
+
+                # 3. Stream audio in chunks
+                chunk_size = 4096
+                for offset in range(0, len(raw_wav), chunk_size):
+                    if self.stop_event.is_set():
+                        ws.send(json.dumps({"type": "barge_in"}))
+                        return
+                    ws.send(raw_wav[offset : offset + chunk_size])
+
+                # 4. Signal end of turn
+                ws.send(json.dumps({"type": "end_turn"}))
+
+                # 5. Receive stream events
+                while not self.stop_event.is_set():
+                    raw_msg = ws.recv()
+                    msg = json.loads(raw_msg)
+                    event_type = msg.get("event")
+                    payload = msg.get("data", {})
+
+                    if event_type == "transcript":
+                        user_transcript = payload.get("transcript", "").strip()
+                        self.ui_queue.put(("STATUS", f"Transcribed: \"{user_transcript}\" - generating voice..."))
+
+                    elif event_type == "chunk":
+                        chunk_text = payload.get("text", "")
+                        chunk_b64 = payload.get("audio_base64", "")
+                        chunk_latency_ms = payload.get("latency_ms", 0.0)
+                        mouth_frames = payload.get("mouth_frames", [])
+
+                        if time_to_first_audio_ms is None:
+                            time_to_first_audio_ms = chunk_latency_ms
+
+                        full_text_parts.append(chunk_text)
+                        total_mouth_frames += len(mouth_frames)
+
+                        if chunk_b64 and not self.stop_event.is_set():
+                            self.ui_queue.put(("STATUS", f"💀 Speaking: \"{chunk_text}\""))
+                            wav_bytes = base64.b64decode(chunk_b64)
+                            self._play_audio_blocking(wav_bytes)
+
+                    elif event_type == "done":
+                        total_latency_ms = payload.get("total_latency_ms", 0.0)
+                        break
+                    elif event_type == "error":
+                        self.ui_queue.put(("ERROR", f"Server error: {payload.get('error')}"))
+                        break
+
+            skeleton_full_text = " ".join(full_text_parts).strip()
+            self.ui_queue.put(
+                (
+                    "TURN",
+                    {
+                        "user": user_transcript,
+                        "skeleton": skeleton_full_text,
+                        "latency_ms": time_to_first_audio_ms or total_latency_ms,
+                        "mouth_frames": total_mouth_frames,
+                    },
+                )
+            )
+            time.sleep(0.3)
+
+        except Exception as exc:
+            if not self.stop_event.is_set():
+                self.ui_queue.put(("ERROR", f"WebSocket turn error: {exc}"))
 
     def _process_turn_streaming(self, files: dict) -> None:
         """Streams synthesized speech chunks as they are generated, achieving sub-second voice TTFA."""

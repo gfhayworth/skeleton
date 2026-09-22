@@ -149,39 +149,59 @@ async def bake_sounds(output_dir: Path, use_mock: bool = False):
     bank = SoundBank(sounds_dir=output_dir, config=config, mouth_sync=mouth_sync, autoload=False)
 
     api_key_str = config.api_key.get_secret_value() if config.api_key else ""
-    if use_mock or not api_key_str or "mock" in api_key_str:
-        print("[bake_sounds] Using MockTTSClient for sound generation...")
+    if use_mock:
+        print("[bake_sounds] Using MockTTSClient (forced via --mock)...")
         tts_client = MockTTSClient()
+    elif not api_key_str or "mock" in api_key_str:
+        raise ValueError(
+            "ERROR: OPENAI_API_KEY is not set in .env or environment. "
+            "Cannot generate authentic spoken audio without a valid API key. "
+            "Pass --mock if synthetic sine tones are explicitly desired."
+        )
     else:
-        print("[bake_sounds] Using OpenAITTSClient (voice='onyx') for sound generation...")
+        print(f"[bake_sounds] Using OpenAITTSClient (voice='{config.tts_voice}', speed={config.tts_speed})...")
         tts_client = OpenAITTSClient(config)
 
-    for item in DEFAULT_SOUND_LIBRARY:
-        sound_id = item["sound_id"]
-        category = item["category"]
-        text = item["text"]
+    try:
+        total = len(DEFAULT_SOUND_LIBRARY)
+        for idx, item in enumerate(DEFAULT_SOUND_LIBRARY, 1):
+            sound_id = item["sound_id"]
+            category = item["category"]
+            text = item["text"]
 
-        print(f"Generating [{category.value}] '{sound_id}': \"{text}\"...")
-        audio_bytes = await tts_client.synthesize(
-            text,
-            voice=config.tts_voice,
-            speed=config.tts_speed,
-            response_format=config.tts_format,
-        )
+            print(f"[{idx}/{total}] Generating [{category.value}] '{sound_id}': \"{text}\"...")
 
-        mouth_frames = mouth_sync.extract_jaw_trajectory(audio_bytes)
-        sound = bank.register_sound(
-            sound_id=sound_id,
-            category=category,
-            text=text,
-            audio_bytes=audio_bytes,
-            mouth_frames=mouth_frames,
-        )
-        bank.save_sound(sound)
-        print(f"   Saved {sound_id}.wav and {sound_id}.json ({len(mouth_frames)} mouth frames, {sound.duration_s}s)")
+            # Retry with exponential backoff on transient errors
+            audio_bytes = b""
+            for attempt in range(1, 4):
+                try:
+                    audio_bytes = await tts_client.synthesize(
+                        text,
+                        voice=config.tts_voice,
+                        speed=config.tts_speed,
+                        response_format="wav",
+                    )
+                    break
+                except Exception as err:
+                    if attempt == 3:
+                        raise
+                    print(f"   Warning: Attempt {attempt} failed ({err}). Retrying in {attempt * 2}s...")
+                    await asyncio.sleep(attempt * 2.0)
 
-    await tts_client.close()
-    print(f"\nSuccessfully baked {len(DEFAULT_SOUND_LIBRARY)} sounds to {output_dir}")
+            mouth_frames = mouth_sync.extract_jaw_trajectory(audio_bytes)
+            sound = bank.register_sound(
+                sound_id=sound_id,
+                category=category,
+                text=text,
+                audio_bytes=audio_bytes,
+                mouth_frames=mouth_frames,
+            )
+            bank.save_sound(sound)
+            print(f"   Saved {sound_id}.wav and {sound_id}.json ({len(mouth_frames)} mouth frames, {sound.duration_s}s)")
+
+        print(f"\nSuccessfully baked {total} authentic sounds to {output_dir}")
+    finally:
+        await tts_client.close()
 
 
 def main():

@@ -2,232 +2,452 @@
   "sound_id": "greeting_gravestones_personality",
   "category": "greeting",
   "text": "I\u2019ve met gravestones with more personality.",
-  "duration_s": 1.5,
+  "duration_s": 2.967,
   "mouth_frames": [
     {
       "timestamp_ms": 0.0,
-      "jaw_angle_deg": 9.26,
-      "normalized_open": 0.264
+      "jaw_angle_deg": 0.0,
+      "normalized_open": 0.0
     },
     {
       "timestamp_ms": 33.3,
-      "jaw_angle_deg": 17.43,
-      "normalized_open": 0.498
+      "jaw_angle_deg": 2.68,
+      "normalized_open": 0.076
     },
     {
       "timestamp_ms": 66.7,
-      "jaw_angle_deg": 21.32,
-      "normalized_open": 0.609
+      "jaw_angle_deg": 3.4,
+      "normalized_open": 0.097
     },
     {
       "timestamp_ms": 100.0,
-      "jaw_angle_deg": 19.35,
-      "normalized_open": 0.553
+      "jaw_angle_deg": 1.36,
+      "normalized_open": 0.039
     },
     {
       "timestamp_ms": 133.3,
-      "jaw_angle_deg": 12.67,
-      "normalized_open": 0.362
+      "jaw_angle_deg": 0.54,
+      "normalized_open": 0.016
     },
     {
       "timestamp_ms": 166.7,
-      "jaw_angle_deg": 5.07,
-      "normalized_open": 0.145
+      "jaw_angle_deg": 3.81,
+      "normalized_open": 0.109
     },
     {
       "timestamp_ms": 200.0,
-      "jaw_angle_deg": 2.03,
-      "normalized_open": 0.058
+      "jaw_angle_deg": 10.05,
+      "normalized_open": 0.287
     },
     {
       "timestamp_ms": 233.3,
-      "jaw_angle_deg": 1.1,
-      "normalized_open": 0.031
+      "jaw_angle_deg": 10.85,
+      "normalized_open": 0.31
     },
     {
       "timestamp_ms": 266.7,
-      "jaw_angle_deg": 6.25,
-      "normalized_open": 0.179
+      "jaw_angle_deg": 7.77,
+      "normalized_open": 0.222
     },
     {
       "timestamp_ms": 300.0,
-      "jaw_angle_deg": 14.03,
-      "normalized_open": 0.401
+      "jaw_angle_deg": 3.11,
+      "normalized_open": 0.089
     },
     {
       "timestamp_ms": 333.3,
-      "jaw_angle_deg": 20.15,
-      "normalized_open": 0.576
+      "jaw_angle_deg": 1.24,
+      "normalized_open": 0.036
     },
     {
       "timestamp_ms": 366.7,
-      "jaw_angle_deg": 21.34,
-      "normalized_open": 0.61
+      "jaw_angle_deg": 0.5,
+      "normalized_open": 0.014
     },
     {
       "timestamp_ms": 400.0,
-      "jaw_angle_deg": 16.96,
-      "normalized_open": 0.485
+      "jaw_angle_deg": 0.2,
+      "normalized_open": 0.006
     },
     {
       "timestamp_ms": 433.3,
-      "jaw_angle_deg": 9.21,
-      "normalized_open": 0.263
+      "jaw_angle_deg": 0.08,
+      "normalized_open": 0.002
     },
     {
       "timestamp_ms": 466.7,
-      "jaw_angle_deg": 3.69,
-      "normalized_open": 0.105
+      "jaw_angle_deg": 2.35,
+      "normalized_open": 0.067
     },
     {
       "timestamp_ms": 500.0,
-      "jaw_angle_deg": 1.47,
-      "normalized_open": 0.042
+      "jaw_angle_deg": 6.52,
+      "normalized_open": 0.186
     },
     {
       "timestamp_ms": 533.3,
-      "jaw_angle_deg": 3.02,
-      "normalized_open": 0.086
+      "jaw_angle_deg": 10.86,
+      "normalized_open": 0.31
     },
     {
       "timestamp_ms": 566.7,
-      "jaw_angle_deg": 9.63,
-      "normalized_open": 0.275
+      "jaw_angle_deg": 11.49,
+      "normalized_open": 0.328
     },
     {
       "timestamp_ms": 600.0,
-      "jaw_angle_deg": 17.14,
-      "normalized_open": 0.49
+      "jaw_angle_deg": 11.22,
+      "normalized_open": 0.32
     },
     {
       "timestamp_ms": 633.3,
-      "jaw_angle_deg": 21.39,
-      "normalized_open": 0.611
+      "jaw_angle_deg": 8.11,
+      "normalized_open": 0.232
     },
     {
       "timestamp_ms": 666.7,
-      "jaw_angle_deg": 20.09,
-      "normalized_open": 0.574
+      "jaw_angle_deg": 3.24,
+      "normalized_open": 0.093
     },
     {
       "timestamp_ms": 700.0,
-      "jaw_angle_deg": 13.84,
-      "normalized_open": 0.396
+      "jaw_angle_deg": 1.3,
+      "normalized_open": 0.037
     },
     {
       "timestamp_ms": 733.3,
-      "jaw_angle_deg": 5.83,
-      "normalized_open": 0.166
+      "jaw_angle_deg": 0.52,
+      "normalized_open": 0.015
     },
     {
       "timestamp_ms": 766.7,
-      "jaw_angle_deg": 2.33,
-      "normalized_open": 0.067
+      "jaw_angle_deg": 0.21,
+      "normalized_open": 0.006
     },
     {
       "timestamp_ms": 800.0,
-      "jaw_angle_deg": 0.93,
-      "normalized_open": 0.027
+      "jaw_angle_deg": 0.08,
+      "normalized_open": 0.002
     },
     {
       "timestamp_ms": 833.3,
-      "jaw_angle_deg": 5.31,
-      "normalized_open": 0.152
+      "jaw_angle_deg": 0.03,
+      "normalized_open": 0.001
     },
     {
       "timestamp_ms": 866.7,
-      "jaw_angle_deg": 12.94,
-      "normalized_open": 0.37
-    },
-    {
-      "timestamp_ms": 900.0,
-      "jaw_angle_deg": 19.53,
-      "normalized_open": 0.558
-    },
-    {
-      "timestamp_ms": 933.3,
-      "jaw_angle_deg": 21.54,
-      "normalized_open": 0.615
-    },
-    {
-      "timestamp_ms": 966.7,
-      "jaw_angle_deg": 17.87,
-      "normalized_open": 0.511
-    },
-    {
-      "timestamp_ms": 1000.0,
-      "jaw_angle_deg": 10.38,
-      "normalized_open": 0.297
-    },
-    {
-      "timestamp_ms": 1033.3,
-      "jaw_angle_deg": 4.15,
-      "normalized_open": 0.119
-    },
-    {
-      "timestamp_ms": 1066.7,
-      "jaw_angle_deg": 1.66,
-      "normalized_open": 0.047
-    },
-    {
-      "timestamp_ms": 1100.0,
-      "jaw_angle_deg": 2.33,
-      "normalized_open": 0.067
-    },
-    {
-      "timestamp_ms": 1133.3,
-      "jaw_angle_deg": 8.49,
-      "normalized_open": 0.243
-    },
-    {
-      "timestamp_ms": 1166.7,
-      "jaw_angle_deg": 16.17,
-      "normalized_open": 0.462
-    },
-    {
-      "timestamp_ms": 1200.0,
-      "jaw_angle_deg": 21.09,
-      "normalized_open": 0.603
-    },
-    {
-      "timestamp_ms": 1233.3,
-      "jaw_angle_deg": 20.62,
-      "normalized_open": 0.589
-    },
-    {
-      "timestamp_ms": 1266.7,
-      "jaw_angle_deg": 14.94,
-      "normalized_open": 0.427
-    },
-    {
-      "timestamp_ms": 1300.0,
-      "jaw_angle_deg": 6.92,
-      "normalized_open": 0.198
-    },
-    {
-      "timestamp_ms": 1333.3,
-      "jaw_angle_deg": 2.77,
-      "normalized_open": 0.079
-    },
-    {
-      "timestamp_ms": 1366.7,
-      "jaw_angle_deg": 1.11,
-      "normalized_open": 0.032
-    },
-    {
-      "timestamp_ms": 1400.0,
       "jaw_angle_deg": 4.52,
       "normalized_open": 0.129
     },
     {
+      "timestamp_ms": 900.0,
+      "jaw_angle_deg": 3.16,
+      "normalized_open": 0.09
+    },
+    {
+      "timestamp_ms": 933.3,
+      "jaw_angle_deg": 1.86,
+      "normalized_open": 0.053
+    },
+    {
+      "timestamp_ms": 966.7,
+      "jaw_angle_deg": 1.24,
+      "normalized_open": 0.036
+    },
+    {
+      "timestamp_ms": 1000.0,
+      "jaw_angle_deg": 0.84,
+      "normalized_open": 0.024
+    },
+    {
+      "timestamp_ms": 1033.3,
+      "jaw_angle_deg": 0.38,
+      "normalized_open": 0.011
+    },
+    {
+      "timestamp_ms": 1066.7,
+      "jaw_angle_deg": 0.15,
+      "normalized_open": 0.004
+    },
+    {
+      "timestamp_ms": 1100.0,
+      "jaw_angle_deg": 0.2,
+      "normalized_open": 0.006
+    },
+    {
+      "timestamp_ms": 1133.3,
+      "jaw_angle_deg": 0.08,
+      "normalized_open": 0.002
+    },
+    {
+      "timestamp_ms": 1166.7,
+      "jaw_angle_deg": 0.03,
+      "normalized_open": 0.001
+    },
+    {
+      "timestamp_ms": 1200.0,
+      "jaw_angle_deg": 0.01,
+      "normalized_open": 0.0
+    },
+    {
+      "timestamp_ms": 1233.3,
+      "jaw_angle_deg": 0.01,
+      "normalized_open": 0.0
+    },
+    {
+      "timestamp_ms": 1266.7,
+      "jaw_angle_deg": 0.0,
+      "normalized_open": 0.0
+    },
+    {
+      "timestamp_ms": 1300.0,
+      "jaw_angle_deg": 0.0,
+      "normalized_open": 0.0
+    },
+    {
+      "timestamp_ms": 1333.3,
+      "jaw_angle_deg": 0.64,
+      "normalized_open": 0.018
+    },
+    {
+      "timestamp_ms": 1366.7,
+      "jaw_angle_deg": 0.26,
+      "normalized_open": 0.007
+    },
+    {
+      "timestamp_ms": 1400.0,
+      "jaw_angle_deg": 0.1,
+      "normalized_open": 0.003
+    },
+    {
       "timestamp_ms": 1433.3,
-      "jaw_angle_deg": 11.87,
-      "normalized_open": 0.339
+      "jaw_angle_deg": 0.04,
+      "normalized_open": 0.001
     },
     {
       "timestamp_ms": 1466.7,
-      "jaw_angle_deg": 18.83,
-      "normalized_open": 0.538
+      "jaw_angle_deg": 1.07,
+      "normalized_open": 0.031
+    },
+    {
+      "timestamp_ms": 1500.0,
+      "jaw_angle_deg": 1.9,
+      "normalized_open": 0.054
+    },
+    {
+      "timestamp_ms": 1533.3,
+      "jaw_angle_deg": 2.72,
+      "normalized_open": 0.078
+    },
+    {
+      "timestamp_ms": 1566.7,
+      "jaw_angle_deg": 3.18,
+      "normalized_open": 0.091
+    },
+    {
+      "timestamp_ms": 1600.0,
+      "jaw_angle_deg": 4.52,
+      "normalized_open": 0.129
+    },
+    {
+      "timestamp_ms": 1633.3,
+      "jaw_angle_deg": 2.58,
+      "normalized_open": 0.074
+    },
+    {
+      "timestamp_ms": 1666.7,
+      "jaw_angle_deg": 1.03,
+      "normalized_open": 0.029
+    },
+    {
+      "timestamp_ms": 1700.0,
+      "jaw_angle_deg": 0.41,
+      "normalized_open": 0.012
+    },
+    {
+      "timestamp_ms": 1733.3,
+      "jaw_angle_deg": 0.17,
+      "normalized_open": 0.005
+    },
+    {
+      "timestamp_ms": 1766.7,
+      "jaw_angle_deg": 0.07,
+      "normalized_open": 0.002
+    },
+    {
+      "timestamp_ms": 1800.0,
+      "jaw_angle_deg": 1.15,
+      "normalized_open": 0.033
+    },
+    {
+      "timestamp_ms": 1833.3,
+      "jaw_angle_deg": 3.71,
+      "normalized_open": 0.106
+    },
+    {
+      "timestamp_ms": 1866.7,
+      "jaw_angle_deg": 2.83,
+      "normalized_open": 0.081
+    },
+    {
+      "timestamp_ms": 1900.0,
+      "jaw_angle_deg": 1.13,
+      "normalized_open": 0.032
+    },
+    {
+      "timestamp_ms": 1933.3,
+      "jaw_angle_deg": 0.45,
+      "normalized_open": 0.013
+    },
+    {
+      "timestamp_ms": 1966.7,
+      "jaw_angle_deg": 0.18,
+      "normalized_open": 0.005
+    },
+    {
+      "timestamp_ms": 2000.0,
+      "jaw_angle_deg": 0.07,
+      "normalized_open": 0.002
+    },
+    {
+      "timestamp_ms": 2033.3,
+      "jaw_angle_deg": 0.03,
+      "normalized_open": 0.001
+    },
+    {
+      "timestamp_ms": 2066.7,
+      "jaw_angle_deg": 0.01,
+      "normalized_open": 0.0
+    },
+    {
+      "timestamp_ms": 2100.0,
+      "jaw_angle_deg": 0.63,
+      "normalized_open": 0.018
+    },
+    {
+      "timestamp_ms": 2133.3,
+      "jaw_angle_deg": 1.3,
+      "normalized_open": 0.037
+    },
+    {
+      "timestamp_ms": 2166.7,
+      "jaw_angle_deg": 1.36,
+      "normalized_open": 0.039
+    },
+    {
+      "timestamp_ms": 2200.0,
+      "jaw_angle_deg": 1.03,
+      "normalized_open": 0.029
+    },
+    {
+      "timestamp_ms": 2233.3,
+      "jaw_angle_deg": 1.71,
+      "normalized_open": 0.049
+    },
+    {
+      "timestamp_ms": 2266.7,
+      "jaw_angle_deg": 1.77,
+      "normalized_open": 0.051
+    },
+    {
+      "timestamp_ms": 2300.0,
+      "jaw_angle_deg": 1.08,
+      "normalized_open": 0.031
+    },
+    {
+      "timestamp_ms": 2333.3,
+      "jaw_angle_deg": 0.53,
+      "normalized_open": 0.015
+    },
+    {
+      "timestamp_ms": 2366.7,
+      "jaw_angle_deg": 0.37,
+      "normalized_open": 0.01
+    },
+    {
+      "timestamp_ms": 2400.0,
+      "jaw_angle_deg": 0.15,
+      "normalized_open": 0.004
+    },
+    {
+      "timestamp_ms": 2433.3,
+      "jaw_angle_deg": 0.06,
+      "normalized_open": 0.002
+    },
+    {
+      "timestamp_ms": 2466.7,
+      "jaw_angle_deg": 0.02,
+      "normalized_open": 0.001
+    },
+    {
+      "timestamp_ms": 2500.0,
+      "jaw_angle_deg": 0.01,
+      "normalized_open": 0.0
+    },
+    {
+      "timestamp_ms": 2533.3,
+      "jaw_angle_deg": 0.0,
+      "normalized_open": 0.0
+    },
+    {
+      "timestamp_ms": 2566.7,
+      "jaw_angle_deg": 0.0,
+      "normalized_open": 0.0
+    },
+    {
+      "timestamp_ms": 2600.0,
+      "jaw_angle_deg": 0.0,
+      "normalized_open": 0.0
+    },
+    {
+      "timestamp_ms": 2633.3,
+      "jaw_angle_deg": 0.0,
+      "normalized_open": 0.0
+    },
+    {
+      "timestamp_ms": 2666.7,
+      "jaw_angle_deg": 0.0,
+      "normalized_open": 0.0
+    },
+    {
+      "timestamp_ms": 2700.0,
+      "jaw_angle_deg": 0.0,
+      "normalized_open": 0.0
+    },
+    {
+      "timestamp_ms": 2733.3,
+      "jaw_angle_deg": 0.0,
+      "normalized_open": 0.0
+    },
+    {
+      "timestamp_ms": 2766.7,
+      "jaw_angle_deg": 0.0,
+      "normalized_open": 0.0
+    },
+    {
+      "timestamp_ms": 2800.0,
+      "jaw_angle_deg": 0.0,
+      "normalized_open": 0.0
+    },
+    {
+      "timestamp_ms": 2833.3,
+      "jaw_angle_deg": 0.0,
+      "normalized_open": 0.0
+    },
+    {
+      "timestamp_ms": 2866.7,
+      "jaw_angle_deg": 0.0,
+      "normalized_open": 0.0
+    },
+    {
+      "timestamp_ms": 2900.0,
+      "jaw_angle_deg": 0.0,
+      "normalized_open": 0.0
+    },
+    {
+      "timestamp_ms": 2933.3,
+      "jaw_angle_deg": 0.0,
+      "normalized_open": 0.0
     }
   ]
 }

@@ -13,6 +13,9 @@ def test_system_persona_content():
     assert "cynical skeleton" in sys_msg["content"]
     assert "CRITICAL OPERATIONAL RULES" in sys_msg["content"]
     assert "Spoken Audio Only" in sys_msg["content"]
+    assert "profanity" in sys_msg["content"].lower()
+    assert "sexual" in sys_msg["content"].lower()
+    assert "family-friendly" in sys_msg["content"].lower()
 
 
 def test_xml_payload_fencing():
